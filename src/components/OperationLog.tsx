@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CheckCircle, XCircle, Loader2, Clock, RefreshCw, List } from 'lucide-react';
+import { Loader2, RefreshCw, List } from 'lucide-react';
 import { acosSimulationService } from '../services/acosSimulation';
 
 const OperationLog = () => {
@@ -25,7 +25,7 @@ const OperationLog = () => {
   const loadOperations = async () => {
     setLoading(true);
     try {
-      const ops = acosSimulationService.getOperations();
+      const ops = await acosSimulationService.getOperations();
       setOperations(ops);
     } catch (error) {
       console.error('Failed to load operations:', error);
@@ -145,7 +145,6 @@ const OperationLog = () => {
           {operations.slice(0, 10).map((op) => (
             <TableRow key={op.id} className="hover:bg-white/5">
               <TableCell className="text-cyan-300 flex items-center space-x-2">
-                <Clock className="w-4 h-4" /> 
                 <span className="text-xs">{new Date(op.timestamp).toLocaleTimeString()}</span>
               </TableCell>
               <TableCell className="text-cyan-300 text-sm">{op.capability}</TableCell>

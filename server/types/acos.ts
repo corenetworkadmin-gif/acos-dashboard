@@ -95,7 +95,6 @@ export interface LocalAIEngine {
     | 'READY'
     | 'INFER'
     | 'QUIESCE'
-    | 'HEALTH_CHECK'
     | 'STOP'
     | 'RECOVER'
     | 'UNLOAD'

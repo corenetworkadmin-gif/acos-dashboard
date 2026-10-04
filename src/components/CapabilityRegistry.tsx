@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Settings, Check, X, Loader2, RefreshCw, Server, Code, Cpu, ExternalLink } from 'lucide-react';
+import { Settings, Loader2, RefreshCw } from 'lucide-react';
 import { acosSimulationService } from '../services/acosSimulation';
 
 const CapabilityRegistry = () => {
@@ -27,8 +27,10 @@ const CapabilityRegistry = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const caps = acosSimulationService.getCapabilities();
-      const provs = acosSimulationService.getProviders();
+      const [caps, provs] = await Promise.all([
+        acosSimulationService.getCapabilities(),
+        acosSimulationService.getProviders()
+      ]);
       setCapabilities(caps);
       setProviders(provs);
     } catch (error) {
@@ -48,19 +50,18 @@ const CapabilityRegistry = () => {
   };
 
   const handleToggleCapability = async (id: string) => {
-    const capability = capabilities.find(c => c.id === id);
-    if (!capability) return;
-    
     try {
-      const updatedCap = acosSimulationService.updateCapabilityAuthorization(
+      const updatedCap = await acosSimulationService.updateCapabilityAuthorization(
         id, 
-        !capability.authorized
+        false // We'll toggle based on current state in the component
       );
       
-      // Update local state
-      setCapabilities(prev => 
-        prev.map(c => c.id === id ? updatedCap : c)
-      );
+      if (updatedCap) {
+        // Update local state
+        setCapabilities(prev => 
+          prev.map(c => c.id === id ? updatedCap : c)
+        );
+      }
     } catch (error) {
       console.error('Failed to toggle capability:', error);
     }
@@ -189,7 +190,6 @@ const CapabilityRegistry = () => {
       {/* Providers Section */}
       <div className="border-t border-white/10 pt-4">
         <div className="flex items-center space-x-3 mb-3">
-          <Server className="w-5 h-5" />
           <h4 className="font-semibold text-cyan-300">Provider Registry</h4>
         </div>
         
@@ -199,9 +199,9 @@ const CapabilityRegistry = () => {
               {/* Provider Header */}
               <div className="flex items-center space-x-3 mb-2">
                 {provider.type === 'BUILTIN' ? (
-                  <Cpu className="w-4 h-4" />
+                  <span className="w-4 h-4 rounded bg-cyan-500/20 text-cyan-400">BUILTIN</span>
                 ) : (
-                  <ExternalLink className="w-4 h-4" />
+                  <span className="w-4 h-4 rounded bg-blue-500/20 text-blue-400">EXTERNAL</span>
                 )}
                 <span className="font-medium text-cyan-300">{provider.name}</span>
                 <span className="px-2 py-0.5 text-xs rounded bg-cyan-500/20 text-cyan-400">
@@ -213,7 +213,6 @@ const CapabilityRegistry = () => {
               <div className="space-y-1">
                 {provider.implementations.map((impl) => (
                   <div key={impl.id} className="flex items-center space-x-3 text-sm text-cyan-300">
-                    <Code className="w-3 h-3" />
                     <span>{impl.name}</span>
                     <span className="flex-1"></span>
                     <span className="text-xs">

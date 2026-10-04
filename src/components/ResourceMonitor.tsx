@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Progress } from "@/components/ui/progress";
-import { Activity, Server, Zap, Monitor, Loader2, RefreshCw, HardDrive, Info } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 import { acosSimulationService } from '../services/acosSimulation';
 
 const ResourceMonitor = () => {
@@ -24,7 +24,7 @@ const ResourceMonitor = () => {
   const loadResources = async () => {
     setLoading(true);
     try {
-      const res = acosSimulationService.getResources();
+      const res = await acosSimulationService.getResources();
       setResources(res);
     } catch (error) {
       console.error('Failed to load resources:', error);
@@ -55,8 +55,7 @@ const ResourceMonitor = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <Activity className="w-5 h-5 text-cyan-400" />
-          <h3 className="font-semibold text-cyan-300">System Resources</h3>
+          <span className="text-cyan-400">System Resources</span>
         </div>
         <button 
           onClick={handleRefresh}
@@ -83,20 +82,6 @@ const ResourceMonitor = () => {
             if (percentage < 80) return 'bg-yellow-500/20 text-yellow-400';
             return 'bg-red-500/20 text-red-400';
           };
-          
-          // Get icon based on resource type
-          const getResourceIcon = (type: string) => {
-            switch (type) {
-              case 'CPU': return Activity;
-              case 'MEMORY': return Monitor;
-              case 'GPU': return Zap;
-              case 'NETWORK': return Server;
-              case 'STORAGE': return HardDrive; // Hard-drive equivalent
-              default: return Activity;
-            }
-          };
-          
-          const IconComponent = getResourceIcon(resource.type);
           
           return (
             <div key={resource.id}>
@@ -127,8 +112,7 @@ const ResourceMonitor = () => {
       {/* Resource Details */}
       <div className="border-t border-white/10 pt-4">
         <div className="flex items-center space-x-3 mb-3">
-          <Info className="w-5 h-5" />
-          <h4 className="font-semibold text-cyan-300">Resource Allocation Details</h4>
+          <span className="text-cyan-400">Resource Allocation Details</span>
         </div>
         
         <div className="space-y-2 text-sm">

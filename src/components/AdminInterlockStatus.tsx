@@ -1,55 +1,39 @@
 import { useState, useEffect } from 'react';
 import { Badge } from "@/components/ui/badge";
-import { LucideIcon, Shield, Lock, AlertTriangle, Activity, Loader2, RefreshCw } from 'lucide-react';
 import { acosSimulationService } from '../services/acosSimulation';
 
 const AdminInterlockStatus = () => {
   const [interlock, setInterlock] = useState(null);
-  const [adminActivity, setAdminActivity] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [adminActivity, setAdminActivity] = useState([]);
 
   useEffect(() => {
     loadInterlockStatus();
-    
-    // Set up periodic refresh
-    const interval = setInterval(() => {
-      if (!refreshing) {
-        loadInterlockStatus();
-      }
-    }, 5000); // Refresh every 5 seconds
-    
-    return () => clearInterval(interval);
-  }, [refreshing]);
+  }, []);
 
   const loadInterlockStatus = async () => {
     setLoading(true);
     try {
-      const interlockState = acosSimulationService.getAdminInterlock();
-      const activity = acosSimulationService.getAdminActivity();
-      setInterlock(interlockState);
-      setAdminActivity(activity);
+      const [interlockData, activityData] = await Promise.all([
+        acosSimulationService.getAdminInterlock(),
+        acosSimulationService.getAdminActivity()
+      ]);
+      setInterlock(interlockData);
+      setAdminActivity(activityData);
     } catch (error) {
-      console.error('Failed to load interlock status:', error);
+      console.error('Failed to load admin interlock status:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    try {
-      await loadInterlockStatus();
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
-  const handleToggleInterlock = async () => {
+  const toggleInterlock = async () => {
     if (!interlock) return;
     
     try {
-      const updatedInterlock = acosSimulationService.setAdminInterlockEngaged(!interlock.engaged);
+      const updatedInterlock = await acosSimulationService.setAdminInterlockEngaged(
+        !interlock.engaged
+      );
       setInterlock(updatedInterlock);
     } catch (error) {
       console.error('Failed to toggle interlock:', error);
@@ -59,8 +43,7 @@ const AdminInterlockStatus = () => {
   if (loading) {
     return (
       <div className="text-center py-8">
-        <Loader2 className="w-8 h-8 mx-auto mb-4 text-cyan-400 animate-spin" />
-        <p className="text-cyan-400">Loading interlock status...</p>
+        <p className="text-cyan-400">Loading admin interlock status...</p>
       </div>
     );
   }
@@ -68,31 +51,16 @@ const AdminInterlockStatus = () => {
   if (!interlock) {
     return (
       <div className="text-center py-8">
-        <p className="text-cyan-400">Interlock data not available</p>
+        <p className="text-cyan-400">Admin interlock data not available</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <Shield className="w-5 h-5 text-cyan-400" />
-          <h3 className="font-semibold text-cyan-300">Administrator Control Interlock</h3>
-        </div>
-        <button 
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className={`px-3 py-1 text-sm rounded hover:bg-white/10 transition-colors ${refreshing ? 'bg-cyan-500/20 text-cyan-400 animate-spin' : 'hover:bg-white/10'}`}
-        >
-          {refreshing ? (
-            <Loader2 className="w-4 h-4 text-cyan-400 animate-spin" />
-          ) : (
-            <RefreshCw className="w-4 h-4 text-cyan-400" />
-          )}
-        </button>
+      <div className="flex items-center space-x-3">
+        <span className="text-cyan-400">Administrator Control Interlock</span>
       </div>
-      
       <div className="bg-black/30 border border-white/10 rounded-lg p-4">
         <div className="flex items-center justify-between mb-3">
           <span className="text-cyan-300">Interlock Status:</span>
@@ -107,7 +75,7 @@ const AdminInterlockStatus = () => {
         </div>
         <div className="flex items-center space-x-3">
           <button
-            onClick={handleToggleInterlock}
+            onClick={toggleInterlock}
             className={`flex-1 px-4 py-2 rounded hover:bg-white/10 transition-colors ${
               interlock.engaged
                 ? "bg-red-500/20 text-red-400 hover:bg-red-500/30"
@@ -130,47 +98,20 @@ const AdminInterlockStatus = () => {
             </ul>
           </div>
         )}
-        {interlock.engaged && (
-          <div className="mt-4 p-3 bg-white/5 rounded">
-            <p className="text-cyan-300 text-sm">
-              Administrator control is active:
-            </p>
-            <ul className="mt-2 space-y-1 pl-5 text-cyan-300 text-sm">
-              <li>Companion is paused and cannot execute new operations</li>
-              <li>Network access is isolated from companion</li>
-              <li>Administrator UI is accessible, companion UI is restricted</li>
-              <li>All companion operations require explicit administrator approval</li>
-            </ul>
-          </div>
-        )}
       </div>
-      
       <div className="mt-4">
         <div className="flex items-center space-x-2 mb-2">
-          <Activity className="w-4 h-4 text-cyan-400" />
-          <h4 className="font-semibold text-cyan-300">Recent Admin Activity</h4>
+          <span className="text-cyan-400">Recent Admin Activity</span>
         </div>
-        
         <div className="space-y-2">
-          {adminActivity.slice(0, 5).map((act) => (
+          {adminActivity.map((act) => (
             <div key={act.timestamp} className="flex items-center space-x-2 text-cyan-300 text-sm">
-              <AlertTriangle className="w-3 h-3" />
-              <span className="text-xs">{new Date(act.timestamp).toLocaleTimeString()}</span>
+              <span className="w-3 h-3 rounded bg-gray-500/20"></span>
+              <span>{new Date(act.timestamp).toLocaleTimeString()}</span>
               <span className="mx-2">→</span>
-              <span className="max-w-[200px] truncate" title={act.details || act.action}>
-                {act.action}
-              </span>
-              {act.details && (
-                <span className="ml-2 text-xs text-cyan-400">({act.details})</span>
-              )}
+              <span>{act.action}</span>
             </div>
           ))}
-          
-          {adminActivity.length > 5 && (
-            <div className="text-center text-cyan-400 text-sm pt-2">
-              Showing 5 of {adminActivity.length} activities
-            </div>
-          )}
         </div>
       </div>
     </div>

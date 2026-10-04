@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Zap, Monitor, Settings, Loader2, RefreshCw, Activity, HardDrive, Cpu } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 import { acosSimulationService } from '../services/acosSimulation';
 import { LocalAIEngine } from '../types/acos';
 
@@ -26,7 +26,7 @@ const LocalAIEngineStatus = () => {
   const loadEngineStatus = async () => {
     setLoading(true);
     try {
-      const eng = acosSimulationService.getLocalAIEngine();
+      const eng = await acosSimulationService.getLocalAIEngine();
       setEngine(eng);
     } catch (error) {
       console.error('Failed to load engine status:', error);
@@ -135,8 +135,7 @@ const LocalAIEngineStatus = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <Monitor className="w-5 h-5 text-cyan-400" />
-          <h3 className="font-semibold text-cyan-300">Local AI Engine Status</h3>
+          <span className="text-cyan-400">Local AI Engine Status</span>
         </div>
         <button 
           onClick={handleRefresh}
@@ -153,11 +152,9 @@ const LocalAIEngineStatus = () => {
       
       <div className="space-y-3">
         <div className="flex items-center space-x-2 text-cyan-300">
-          <Zap className="w-4 h-4" />
           <span>Engine:</span> <span className="ml-2 font-mono">{engine.model || 'None'}</span>
         </div>
         <div className="flex items-center space-x-2 text-cyan-300">
-          <Settings className="w-4 h-4" />
           <span>Tokenizer:</span> <span className="ml-2">{engine.tokenizerCompatible ? 'Compatible' : 'Incompatible'}</span>
         </div>
         <div className="flex items-center space-x-2 text-cyan-300">
@@ -171,8 +168,7 @@ const LocalAIEngineStatus = () => {
       <div className="space-y-4">
         <div className="border-t border-white/10 pt-4">
           <div className="flex items-center space-x-3 mb-3">
-            <Activity className="w-5 h-5" />
-            <h4 className="font-semibold text-cyan-300">Resource Utilization</h4>
+            <span className="text-cyan-400">Resource Utilization</span>
           </div>
           
           <div className="space-y-3">
@@ -204,8 +200,7 @@ const LocalAIEngineStatus = () => {
         
         <div className="border-t border-white/10 pt-4">
           <div className="flex items-center space-x-3 mb-3">
-            <HardDrive className="w-5 h-5" />
-            <h4 className="font-semibold text-cyan-300">Context Window</h4>
+            <span className="text-cyan-400">Context Window</span>
           </div>
           
           <div className="space-y-3">
@@ -227,13 +222,11 @@ const LocalAIEngineStatus = () => {
         
         <div className="border-t border-white/10 pt-4">
           <div className="flex items-center space-x-3 mb-3">
-            <Zap className="w-5 h-5" />
-            <h4 className="font-semibold text-cyan-300">Accelerator Utilization</h4>
+            <span className="text-cyan-400">Accelerator Utilization</span>
           </div>
           
           <div className="space-y-3">
             <div className="flex items-center space-x-3 text-sm text-cyan-300">
-              <Cpu className="w-4 h-4" />
               <span>CPU:</span> 
               <span className="ml-2">
                 {engine.acceleratorUtilization.cpu ? 
@@ -243,7 +236,6 @@ const LocalAIEngineStatus = () => {
               </span>
             </div>
             <div className="flex items-center space-x-3 text-sm text-cyan-300">
-              <Zap className="w-4 h-4" />
               <span>GPU:</span> 
               <span className="ml-2">
                 {engine.acceleratorUtilization.gpu ? 
@@ -253,7 +245,6 @@ const LocalAIEngineStatus = () => {
               </span>
             </div>
             <div className="flex items-center space-x-3 text-sm text-cyan-300">
-              <Zap className="w-4 h-4" />
               <span>NPU:</span> 
               <span className="ml-2">
                 {engine.acceleratorUtilization.npu ? 
