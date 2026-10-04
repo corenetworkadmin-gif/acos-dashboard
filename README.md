@@ -4,6 +4,10 @@ A working React dashboard and a Linux host runtime for **one companion**, with r
 
 This is the first host-runtime implementation toward the supplied ACOS architecture (the attachment is titled v0.7, but its content specifies revision v0.8). It is **not a standalone operating system or the complete 89-section specification**. See [implementation status](docs/implementation-status.md) for the exact boundary.
 
+## Windows 11
+
+Use [the Windows setup guide](docs/windows.md) to install Ubuntu 24.04 on WSL2, run the setup script, and launch ACOS in your Windows browser. The reference engine supports Intel/AMD x64.
+
 ## Requirements
 
 - Linux x86_64 for the reference provider; Node.js 24+; pnpm 10+.
@@ -26,6 +30,8 @@ In a second terminal:
 ```bash
 pnpm dev
 ```
+
+For daily local use after building, `pnpm start` starts the host and built dashboard together on loopback, waits for readiness, and stops both with Ctrl-C. Do not run it alongside the two-terminal setup. In WSL, use `bash src/host/start-local.sh` to select the installed Linux toolchain. `pnpm run check:host` verifies runtime prerequisites.
 
 Open **http://localhost:8080**. The host API listens only on **127.0.0.1:4317**; Vite proxies `/api` to it. The reference installer pins llama.cpp **b11392** and **Qwen2.5-0.5B-Instruct Q4_K_M**, checks both published SHA-256 digests, and writes ignored `.env.local`. The Qwen model uses the included ChatML adapter; arbitrary GGUF architectures/templates are not claimed compatible.
 
@@ -82,6 +88,7 @@ On restart, unresolved operations become cancelled and inference remains stopped
 pnpm typecheck
 pnpm lint
 pnpm test
+pnpm test:launch # builds the dashboard and tests combined launch/shutdown
 pnpm build
 ```
 

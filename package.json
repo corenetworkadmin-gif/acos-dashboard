@@ -12,7 +12,11 @@
     "host": "node --env-file-if-exists=.env.local --experimental-strip-types src/host/server.ts",
     "test": "node --experimental-strip-types --test src/host/*.test.ts",
     "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json",
-    "setup:engine": "bash src/host/install-local-engine.sh"
+    "setup:engine": "bash src/host/install-local-engine.sh",
+    "start": "node --env-file-if-exists=.env.local --experimental-strip-types src/host/launch.ts",
+    "setup:windows": "bash src/host/setup-wsl.sh",
+    "check:host": "node --experimental-strip-types src/host/doctor.ts",
+    "test:launch": "pnpm build && node --experimental-strip-types --test src/host/launch.integration.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
