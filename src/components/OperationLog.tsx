@@ -1,195 +1,225 @@
-import { useState, useEffect } from 'react';
-import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Loader2, RefreshCw, List } from 'lucide-react';
-import { acosSimulationService } from '../services/acosSimulation';
-
-const OperationLog = () => {
-  const [operations, setOperations] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-
-  useEffect(() => {
-    loadOperations();
-    
-    // Set up periodic refresh to simulate real-time updates
-    const interval = setInterval(() => {
-      if (!refreshing) {
-        loadOperations();
-      }
-    }, 5000); // Refresh every 5 seconds
-    
-    return () => clearInterval(interval);
-  }, [refreshing]);
-
-  const loadOperations = async () => {
-    setLoading(true);
-    try {
-      const ops = await acosSimulationService.getOperations();
-      setOperations(ops);
-    } catch (error) {
-      console.error('Failed to load operations:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    try {
-      await loadOperations();
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
-  const statusBadge = (status: string) => {
-    const variants: Record<string, string> = {
-      COMPLETED: "bg-green-500/20 text-green-400",
-      RUNNING: "bg-yellow-500/20 text-yellow-400",
-      REQUESTED: "bg-blue-500/20 text-blue-400",
-      VALIDATING: "bg-blue-500/20 text-blue-400",
-      AUTHORIZED: "bg-blue-500/20 text-blue-400",
-      ADMITTED: "bg-blue-500/20 text-blue-400",
-      RESERVING_RESOURCES: "bg-blue-500/20 text-blue-400",
-      COMPLETING: "bg-blue-500/20 text-blue-400",
-      WAITING_FOR_AUTHORIZATION: "bg-orange-500/20 text-orange-400",
-      DENIED: "bg-red-500/20 text-red-400",
-      CANCELLED: "bg-red-500/20 text-red-400",
-      TIMEOUT: "bg-red-500/20 text-red-400",
-      FAILED: "bg-red-500/20 text-red-400",
-      ABORTED: "bg-red-500/20 text-red-400",
-      RECOVERY_REQUIRED: "bg-purple-500/20 text-purple-400",
-    };
-    return <Badge variant="secondary" className={variants[status] || variants.REQUESTED}>
-      {status}
-    </Badge>;
-  };
-
-  const getLifecycleColor = (state: string) => {
-    const colors: Record<string, string> = {
-      REQUESTED: 'text-blue-400',
-      VALIDATING: 'text-blue-400',
-      AUTHORIZED: 'text-blue-400',
-      ADMITTED: 'text-blue-400',
-      RESERVING_RESOURCES: 'text-blue-400',
-      RUNNING: 'text-yellow-400',
-      COMPLETING: 'text-blue-400',
-      COMPLETED: 'text-green-400',
-      WAITING_FOR_AUTHORIZATION: 'text-orange-400',
-      DENIED: "bg-red-500/20 text-red-400",
-      CANCELLED: "bg-red-500/20 text-red-400",
-      TIMEOUT: "bg-red-500/20 text-red-400",
-      FAILED: "bg-red-500/20 text-red-400",
-      ABORTED: "bg-red-500/20 text-red-400",
-      RECOVERY_REQUIRED: "bg-purple-500/20 text-purple-400",
-    };
-    return colors[state] || 'text-white';
-  };
-
-  if (loading) {
-    return (
-      <div className="text-center py-8">
-        <Loader2 className="w-8 h-8 mx-auto mb-4 text-cyan-400 animate-spin" />
-        <p className="text-cyan-400">Loading operation logs...</p>
-      </div>
-    );
-  }
-
-  if (operations.length === 0) {
-    return (
-      <div className="text-center py-8">
-        <p className="text-cyan-400">No operations found</p>
-        <button 
-          onClick={handleRefresh}
-          className="mt-4 px-4 py-2 bg-cyan-500/20 text-cyan-400 rounded hover:bg-cyan-500/30"
-        >
-          <RefreshCw className="w-4 h-4" /> Refresh
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="font-semibold text-cyan-300 flex items-center space-x-2">
-          <List className="w-5 h-5" />
-          Operation Log
-        </h3>
-        <button 
-          onClick={handleRefresh}
-          disabled={refreshing}
-          className={`px-3 py-1 text-sm rounded hover:bg-white/10 transition-colors ${refreshing ? 'bg-cyan-500/20 text-cyan-400 animate-spin' : 'hover:bg-white/10'}`}
-        >
-          {refreshing ? (
-            <Loader2 className="w-4 h-4 text-cyan-400 animate-spin" />
-          ) : (
-            <RefreshCw className="w-4 h-4 text-cyan-400" />
-          )}
-        </button>
-      </div>
-      
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-20">Time</TableHead>
-            <TableHead className="w-20">Capability</TableHead>
-            <TableHead className="w-24">Action</TableHead>
-            <TableHead className="w-16">Lifecycle</TableHead>
-            <TableHead className="w-12">Auth</TableHead>
-            <TableHead className="w-10">Sec</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {operations.slice(0, 10).map((op) => (
-            <TableRow key={op.id} className="hover:bg-white/5">
-              <TableCell className="text-cyan-300 flex items-center space-x-2">
-                <span className="text-xs">{new Date(op.timestamp).toLocaleTimeString()}</span>
-              </TableCell>
-              <TableCell className="text-cyan-300 text-sm">{op.capability}</TableCell>
-              <TableCell className="text-cyan-300 text-sm max-w-[120px] truncate" title={op.action}>
-                {op.action}
-              </TableCell>
-              <TableCell className={`text-sm ${getLifecycleColor(op.lifecycleState)}`}>
-                {op.lifecycleState}
-              </TableCell>
-              <TableCell className="text-center text-sm">
-                <Badge 
-                  variant="secondary" 
-                  className={op.authorizationResult === 'APPROVED' 
-                    ? "bg-green-500/20 text-green-400" 
-                    : op.authorizationResult === 'DENIED'
-                      ? "bg-red-500/20 text-red-400"
-                      : "bg-yellow-500/20 text-yellow-400"}>
-                  {op.authorizationResult}
-                </Badge>
-              </TableCell>
-              <TableCell className="text-center text-sm">
-                <Badge 
-                  variant="secondary" 
-                  className={op.securityState === 'NORMAL' 
-                    ? "bg-green-500/20 text-green-400" 
-                    : op.securityState === 'RESTRICTED' || op.securityState === 'CONFIDENTIAL'
-                      ? "bg-yellow-500/20 text-yellow-400"
-                      : op.securityState === 'ISOLATED' || op.securityState === 'EMERGENCY_ISOLATION'
-                        ? "bg-red-500/20 text-red-400"
-                        : "bg-blue-500/20 text-blue-400"}>
-                  {op.securityState}
-                </Badge>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      
-      {operations.length > 10 && (
-        <div className="text-center text-cyan-400 text-sm pt-2">
-          Showing 10 of {operations.length} operations
-        </div>
-      )}
-    </div>
+import { useState } from "react";
+import { Activity, ArrowDownToLine, ChevronRight, Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { useRuntime } from "@/runtime/store";
+import type { Operation } from "@/runtime/model";
+import { Widget } from "./Widget";
+import StatusBadge from "./StatusBadge";
+import { downloadJson } from "@/lib/download";
+export default function OperationLog() {
+  const state = useRuntime();
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("ALL");
+  const [selected, setSelected] = useState<Operation | null>(null);
+  const operations = state.operations.filter(
+    (op) =>
+      `${op.id} ${op.capability} ${op.action}`
+        .toLowerCase()
+        .includes(search.toLowerCase()) &&
+      (filter === "ALL" || op.status === filter),
   );
-};
-
-export default OperationLog;
+  const detail =
+    state.operations.find((op) => op.id === selected?.id) ?? selected;
+  return (
+    <>
+      <Widget
+        title="Operation history"
+        description="Every request is correlated with its authorization, execution, and resource release."
+        action={
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() =>
+              downloadJson(
+                {
+                  exportedAt: new Date().toISOString(),
+                  operations: state.operations,
+                },
+                "acos-operations.json",
+              )
+            }
+          >
+            <ArrowDownToLine size={13} className="mr-2" />
+            Export
+          </Button>
+        }
+      >
+        <div className="mb-5 flex flex-wrap gap-3">
+          <div className="relative min-w-52 flex-1">
+            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label="Search operations"
+              placeholder="Search by ID, capability, or action…"
+              className="pl-9"
+            />
+          </div>
+          <select
+            aria-label="Filter operation status"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            className="rounded-md border bg-white px-3 text-xs"
+          >
+            {[
+              "ALL",
+              "COMPLETED",
+              "DENIED",
+              "FAILED",
+              "CANCELLED",
+              "RUNNING",
+              "TIMEOUT",
+            ].map((s) => (
+              <option key={s} value={s}>
+                {s === "ALL" ? "All statuses" : s}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-y bg-muted/30 text-[10px] uppercase tracking-wider text-muted-foreground">
+                <th className="p-3 font-medium">Operation</th>
+                <th className="p-3 font-medium">Capability / target</th>
+                <th className="p-3 font-medium">Status</th>
+                <th className="p-3 font-medium">Time</th>
+                <th className="p-3">
+                  <span className="sr-only">Details</span>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {operations.map((op) => (
+                <tr key={op.id} className="border-b hover:bg-muted/20">
+                  <td className="p-3">
+                    <p className="font-medium">{op.action}</p>
+                    <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+                      {op.id.slice(0, 8)}
+                    </p>
+                  </td>
+                  <td className="p-3">
+                    <p>{op.capability}</p>
+                    <p className="mt-1 text-[10px] text-muted-foreground">
+                      {op.target}
+                    </p>
+                  </td>
+                  <td className="p-3">
+                    <StatusBadge
+                      tone={
+                        op.status === "COMPLETED"
+                          ? "good"
+                          : ["DENIED", "FAILED", "TIMEOUT"].includes(op.status)
+                            ? "danger"
+                            : "warning"
+                      }
+                    >
+                      {op.status}
+                    </StatusBadge>
+                  </td>
+                  <td className="whitespace-nowrap p-3 text-[11px] text-muted-foreground">
+                    {new Date(op.timestamp).toLocaleTimeString()}
+                  </td>
+                  <td>
+                    <Button
+                      aria-label={`View operation ${op.id.slice(0, 8)}`}
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setSelected(op)}
+                    >
+                      <ChevronRight size={15} />
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {operations.length === 0 && (
+          <div className="py-16 text-center">
+            <Activity className="mx-auto mb-4 h-7 w-7 text-slate-300" />
+            <p className="text-sm font-medium">
+              {search || filter !== "ALL"
+                ? "No matching operations"
+                : "A clear starting point."}
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Requests from chat and Companion Home will appear here.
+            </p>
+          </div>
+        )}
+        <p className="mt-4 text-[10px] text-muted-foreground">
+          Showing {operations.length} of {state.operations.length} recent
+          operations. Full host events are retained in the SQLite audit journal.
+        </p>
+      </Widget>
+      <Widget className="mt-6" title="Administrator activity">
+        <div className="max-h-72 space-y-4 overflow-auto">
+          {state.activity.slice(0, 30).map((event) => (
+            <div key={event.id} className="flex gap-4 text-xs">
+              <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                {new Date(event.timestamp).toLocaleTimeString()}
+              </span>
+              <p className="break-words">{event.description}</p>
+            </div>
+          ))}
+        </div>
+      </Widget>
+      <Dialog
+        open={!!detail}
+        onOpenChange={(open) => !open && setSelected(null)}
+      >
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Operation lifecycle</DialogTitle>
+            <DialogDescription className="break-all font-mono text-[11px]">
+              {detail?.id}
+            </DialogDescription>
+          </DialogHeader>
+          {detail && (
+            <>
+              <div className="grid grid-cols-2 gap-4 rounded-lg bg-muted/40 p-4 text-xs">
+                <div>
+                  Capability
+                  <p className="mt-1 font-medium">{detail.capability}</p>
+                </div>
+                <div>
+                  Policy version
+                  <p className="mt-1 font-medium">v{detail.policyVersion}</p>
+                </div>
+                <div>
+                  Target<p className="mt-1 font-medium">{detail.target}</p>
+                </div>
+                <div>
+                  Companion
+                  <p className="mt-1 break-all font-medium">
+                    {detail.companionId}
+                  </p>
+                </div>
+              </div>
+              <ol className="ml-2 border-l pl-5">
+                {detail.events.map((event, i) => (
+                  <li key={i} className="relative py-3">
+                    <span className="absolute -left-[25px] top-4 h-2 w-2 rounded-full bg-primary" />
+                    <p className="text-xs font-semibold">{event.state}</p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      {event.description}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}

@@ -29,3 +29,10 @@ dist-ssr
 /playwright/.cache/
 .last-run.json
 .dyad/
+
+# Host credentials and local runtime state
+.env
+.env.local
+.acos/
+*.sqlite
+*.sqlite-journal

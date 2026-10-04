@@ -1,22 +1,38 @@
-import { defineConfig } from 'vite'
-import dyadComponentTagger from '@dyad-sh/react-vite-component-tagger'
-import react from '@vitejs/plugin-react-swc'
-import { resolve } from 'path'
-
-export default defineConfig(() => ({
-  server: {
-    host: '::',
-    port: 8080,
-  },
-  plugins: [dyadComponentTagger(), react()],
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, './src'),
-      '~/': resolve(__dirname, './server'),
+import { defineConfig, loadEnv } from "vite";
+import react from "@vitejs/plugin-react-swc";
+import { resolve } from "node:path";
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), "ACOS_");
+  const port = Number(process.env.ACOS_PORT ?? env.ACOS_PORT ?? 4317);
+  if (!Number.isInteger(port) || port < 1024 || port > 65535)
+    throw new Error("ACOS_PORT must be a port from 1024 to 65535.");
+  const hostApi = `http://127.0.0.1:${port}`;
+  return {
+    server: {
+      host: "0.0.0.0",
+      port: 8080,
+      strictPort: true,
+      proxy: {
+        "/api": {
+          target: hostApi,
+          timeout: 150000,
+          proxyTimeout: 150000,
+        },
+      },
     },
-  },
-  // Configure for Nitro-like server handling
-  optimizeDeps: {
-    exclude: ['@dyad-sh/react-vite-component-tagger'],
-  },
-}))
+    preview: {
+      host: "0.0.0.0",
+      port: 8080,
+      strictPort: true,
+      proxy: {
+        "/api": {
+          target: hostApi,
+          timeout: 150000,
+          proxyTimeout: 150000,
+        },
+      },
+    },
+    plugins: [react()],
+    resolve: { alias: { "@": resolve(import.meta.dirname, "./src") } },
+  };
+});
