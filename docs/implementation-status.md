@@ -25,7 +25,11 @@ Reference: supplied ACOS proposal, revision v0.8, sections 1–89.
 4. Signed provider/extension registry, WASI or equivalent extension isolation, capability-specific device/network implementations and constrained remote execution.
 5. Authenticated source-to-destination migration with source retirement, identity proofs, anti-replication enforcement, transactional snapshot/restore/update orchestration.
 6. Generalized local model installation/compatibility registry, streaming inference, structured tool-call mediation, accelerator scheduling, model replacement compatibility reports.
+7. Adversarial test suite (spec Phase 7, section 60): propagation, covert-channel, credential-isolation, financial-isolation, administrator-interlock, recovery-abuse, authorization-replay, and resource-reconciliation testing. The current tests cover policy denials, persistence, interlock/cancellation, relocation, restart reconciliation, audit corruption, HTTP authorization/CSRF, and real Linux isolation, but not the full adversarial class.
+8. Financial isolation test class (spec section 59): dedicated tests attempting banking-credential discovery, browser-session inspection, transaction initiation, and the other prohibited paths. The boundary is enforced architecturally — no financial capability exists and relocation rejects financial/propagation declarations — but the dedicated test class is not yet written.
 
 Unavailable providers fail closed. The interface does not represent these remaining subsystems as operational. Financial and propagation authority are not configurable capabilities.
+
+Reviewed against the supplied v0.8 proposal (sections 1–89) on 2026-10-04. The implementation is published on `main`; the earlier task-branch setup instructions in `docs/windows.md` have been updated to match.
 
 Hardware contract and platform limits: [hardware discovery](hardware.md).

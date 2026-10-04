@@ -30,18 +30,18 @@ If installation fails or WSL is old, run `wsl --update`, restart, and retry. Fir
 
 ## 2. Install ACOS inside Ubuntu
 
-Run these commands in the **Ubuntu terminal**, not PowerShell. The implementation is currently published on the task branch, so these commands deliberately select it while the merge to `main` is pending.
+Run these commands in the **Ubuntu terminal**, not PowerShell. The implementation is published on `main`.
 
 ```bash
 cd ~
 sudo apt-get update
 sudo apt-get install -y git
-git clone --branch coderabbit/finish-acos-dashboard/a1c71758 https://github.com/corenetworkadmin-gif/acos-dashboard.git acos-dashboard
+git clone https://github.com/corenetworkadmin-gif/acos-dashboard.git acos-dashboard
 cd ~/acos-dashboard
 bash src/host/setup-wsl.sh
 ```
 
-If GitHub asks for authentication, use your own GitHub access for this repository. If `~/acos-dashboard` already exists, do not delete it: enter it, commit/stash your work if needed, fetch, switch to the task branch, and use `git pull --ff-only` before running setup.
+If GitHub asks for authentication, use your own GitHub access for this repository. If `~/acos-dashboard` already exists, do not delete it: enter it, commit/stash your work if needed, fetch, and use `git pull --ff-only` before running setup.
 
 The setup script:
 
