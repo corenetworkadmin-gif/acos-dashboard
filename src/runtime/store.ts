@@ -1,3 +1,4 @@
+import type { HardwareReport, ComputePlan } from "./hardware";
 import { useSyncExternalStore } from "react";
 import type { RuntimeState } from "./model";
 export type HostState = RuntimeState & {
@@ -12,6 +13,9 @@ export type HostState = RuntimeState & {
     maxOutputTokens: number;
     completedOperations: number;
     memoryReservation: number;
+    hardware: HardwareReport | null;
+    compute: ComputePlan | null;
+    providers: { backend: string; architectures: string[]; status: string }[];
     engineError: string | null;
   };
 };

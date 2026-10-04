@@ -1,8 +1,8 @@
 # Run ACOS on Windows 11
 
-The local AI runtime runs in **Ubuntu 24.04 on WSL2**, and the dashboard opens in your regular Windows browser. The reference installer supports Intel/AMD x64 PCs. An ARM/Snapdragon PC needs a different engine build and is not supported by this installer.
+The local AI runtime runs in **Ubuntu 24.04 on WSL2**, and the dashboard opens in your regular Windows browser. The installer selects x64 or ARM64 Node tools. The optional reference AI download is x64 only; ARM64 requires a matching CPU engine binary. ACOS starts without a model.
 
-Allow about 2 GB of free disk space, at least 8 GB of Windows RAM, and Internet access for installation. Model execution is offline after installation. Your computer must remain awake and the launcher must remain running to use ACOS.
+Allow space for the selected dependencies and Internet access for installation. The optional engine checks for 1.5 GiB free on its destination filesystem. Model loading checks actual available guest memory; no fixed Windows RAM size or GPU is required. Model execution is offline after installation. Your computer must remain awake and the launcher must remain running to use ACOS.
 
 ## 1. Install WSL2
 
@@ -45,14 +45,14 @@ If GitHub asks for authentication, use your own GitHub access for this repositor
 
 The setup script:
 
-- Checks WSL2, Ubuntu 24.04, x64 architecture, and the Linux filesystem.
+- Checks WSL2, Ubuntu 24.04, supported tool architecture (x64/ARM64), and the Linux filesystem.
 - Installs Ubuntu prerequisites using `sudo`.
 - Installs checksum-pinned Node.js 24.14.1 and pnpm 10.34.5 in your Linux home without changing your shell profile.
-- Installs locked application dependencies and verifies required isolation namespaces.
-- Installs the checksum-pinned llama.cpp engine and Qwen model (about 510 MB download).
+- Installs locked application dependencies and reports hardware/isolation availability.
+- Optionally installs the checksum-pinned x64 llama.cpp engine and Qwen model when explicitly selected (about 510 MB download).
 - Keeps an existing `.env.local` and companion database; builds the dashboard.
 
-Keep the repository and host data in the **Linux home**, not `C:\`, OneDrive, or `/mnt/c`. This preserves Linux permissions and avoids cross-filesystem behavior. See [Microsoft’s filesystem guidance](https://learn.microsoft.com/en-us/windows/wsl/filesystems).
+Keep the repository and host data in the **Linux home**, not a mounted Windows drive or OneDrive. This preserves Linux permissions and avoids cross-filesystem behavior. See [Microsoft’s filesystem guidance](https://learn.microsoft.com/en-us/windows/wsl/filesystems).
 
 ## 3. Launch
 
@@ -69,7 +69,7 @@ The launcher starts both the private host API and the built dashboard, checks re
 
 For later launches, copy `src/windows/Start-ACOS.cmd` to your Windows desktop and double-click it. It uses the default `Ubuntu-24.04` distribution and `~/acos-dashboard` install path. For a custom distribution or path, edit that short launcher to match. You still need to complete setup first.
 
-## 4. Unlock and load the model
+## 4. Unlock and optionally load the model
 
 Open a second Ubuntu terminal and read the key **locally**:
 
@@ -95,3 +95,9 @@ Paste it into the dashboard’s Administrator key field. Do not send this key in
 ## Verification scope
 
 The Linux host, sandbox, combined launcher, HTTP proxy, shutdown behavior, and build are tested in the development sandbox. Actual WSL installation, Windows browser forwarding, and the `.cmd` launcher require verification on your Windows computer; this repository cannot remotely configure that machine.
+
+## Optional AI installation and hardware report
+
+Setup does not install an AI engine by default. On x64, run `pnpm setup:engine` inside Ubuntu after setup, or opt in during setup with `ACOS_INSTALL_REFERENCE_ENGINE=1 bash src/host/setup-wsl.sh`. If unavailable, the dashboard and Home still work. On ARM64 configure a matching engine and model as described in `.env.example`.
+
+Run `pnpm run check:host` for detected guest resources. See [hardware discovery](hardware.md) for memory admission, backend compatibility, unknown device telemetry and current execution limits. Actual Windows/ARM64 installation must still be verified on target hardware.

@@ -6,7 +6,7 @@ if [[ "${1:-}" == "--help" ]]; then
   echo 'Optional: ACOS_ENGINE_DIR for installation root; ACOS_ENGINE_ENV_FILE for environment file.'
   exit 0
 fi
-[[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]] || { echo 'Reference installer requires Linux x86_64.' >&2; exit 1; }
+[[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]] || { echo 'This optional engine archive requires Linux x86_64. ACOS itself can start without it; configure an engine matching your architecture.' >&2; exit 1; }
 command -v bwrap >/dev/null || { echo 'Install bubblewrap with your system package manager first.' >&2; exit 1; }
 command -v prlimit >/dev/null
 node -e 'if (Number(process.versions.node.split(".")[0]) < 24) throw Error("Node 24+ required")'
@@ -14,6 +14,11 @@ install_dir="${ACOS_ENGINE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/acos-engine
 config_file="${ACOS_ENGINE_ENV_FILE:-.env.local}"
 mkdir -p "$install_dir"
 install_dir="$(cd "$install_dir" && pwd)"
+node --input-type=module - "$install_dir" <<'JS'
+import { statfsSync } from 'node:fs';
+const s = statfsSync(process.argv[2]);
+if (s.bavail * s.bsize < 1536 * 1024 ** 2) throw new Error('The reference download/extraction needs 1.5 GiB of free space on the selected installation filesystem. Set ACOS_ENGINE_DIR to another directory or free space.');
+JS
 staging_dir="$(mktemp -d "$install_dir/.download.XXXXXX")"
 trap 'rm -r -- "$staging_dir"' EXIT
 curl --fail --location --retry 2 'https://github.com/ggml-org/llama.cpp/releases/download/b11392/llama-b11392-bin-ubuntu-x64.tar.gz' -o "$staging_dir/engine.tar.gz"

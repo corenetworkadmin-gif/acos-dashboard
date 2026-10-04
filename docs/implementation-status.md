@@ -9,7 +9,7 @@ Reference: supplied ACOS proposal, revision v0.8, sections 1–89.
 | Companion / engine separation | One current identity, persistent personality/memories, conversation archive, replaceable configured engine                                     | Single host daemon; no bootable OS image                                                         |
 | Operations                    | Explicit ID, identity, target, policy version, deterministic admission/execution/terminal states                                               | Three executable capability contracts                                                            |
 | Policy                        | Fail-closed allowlist, target/action matching, Safe/Intermediate/Advanced ceilings                                                             | Network/device/remote providers remain unavailable                                               |
-| Resources                     | Exclusive inference slot, process resource limits, timeout/output bounds, cleanup                                                              | CPU only; reservation limits rather than physical utilization telemetry                          |
+| Resources                     | Dynamic host discovery, model resource admission, exclusive inference slot, process limits and cleanup                                                              | CPU execution only; partial accelerator inventory; logical reservations, not guaranteed physical RAM                          |
 | Administrator                 | Independent host key, expiring HttpOnly session, interlock drain/cancel, emergency process termination                                         | Trusted host administrator; no hardware keystore, MFA, or remote deployment hardening            |
 | Persistence / audit           | SQLite atomic state and hash-linked append journal, private permissions, startup corruption checks and interrupted-operation reconciliation    | No encrypted disk, external signature anchoring, or automated backup UI                          |
 | Local AI                      | Verified GGUF, llama.cpp CPU inference, actual model/tokenizer health check, ChatML context, offline namespace, cancellation                   | Qwen/ChatML reference adapter; no streaming, GPU/NPU, generalized tokenizer or tool-call adapter |
@@ -27,3 +27,5 @@ Reference: supplied ACOS proposal, revision v0.8, sections 1–89.
 6. Generalized local model installation/compatibility registry, streaming inference, structured tool-call mediation, accelerator scheduling, model replacement compatibility reports.
 
 Unavailable providers fail closed. The interface does not represent these remaining subsystems as operational. Financial and propagation authority are not configurable capabilities.
+
+Hardware contract and platform limits: [hardware discovery](hardware.md).

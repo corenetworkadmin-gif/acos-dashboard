@@ -17,7 +17,7 @@ function fixture(script: string, timeoutMs = 2000) {
     sha256: createHash("sha256").update("synthetic-model").digest("hex"),
     context: 4096,
     maxTokens: 64,
-    memoryBytes: 4294967296,
+    memoryBytes: 128 * 1024 ** 2,
     timeoutMs,
   });
   return {
@@ -56,6 +56,30 @@ test("real sandbox process timeout and cancellation leave no active provider", a
     f.engine.cancel();
     await rejected;
     assert.equal(f.engine.active, null);
+  } finally {
+    f.close();
+  }
+});
+
+test("fresh memory admission rejects pressure before spawning and releases real reservations", async () => {
+  const f = fixture('sleep 0.05\nprintf "done"');
+  try {
+    await f.engine.verify();
+    const hardware = structuredClone(f.engine.hardware!);
+    f.engine.discover = () => hardware;
+    hardware.memory.availableBytes = f.engine.config!.memoryBytes * 4;
+    const result = f.engine.infer("hi");
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(
+      f.engine.reservation?.memoryBytes,
+      f.engine.config!.memoryBytes,
+    );
+    await result;
+    assert.equal(f.engine.reservation, null);
+    hardware.memory.availableBytes = 1;
+    await assert.rejects(f.engine.infer("hi"), /Insufficient available/);
+    assert.equal(f.engine.active, null);
+    assert.equal(f.engine.reservation, null);
   } finally {
     f.close();
   }

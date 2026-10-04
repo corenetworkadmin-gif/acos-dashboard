@@ -1,3 +1,8 @@
+import { discoverHardware } from "./hardware.ts";
+import { cpuProvider, planCompute } from "./resources.ts";
+import type { HardwareReport, ComputePlan } from "../runtime/hardware.ts";
+import { sandboxArgs } from "./sandbox.ts";
+export { sandboxArgs } from "./sandbox.ts";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
@@ -12,6 +17,8 @@ export interface EngineConfig {
   maxTokens: number;
   memoryBytes: number;
   timeoutMs: number;
+  maxThreads?: number;
+  backend?: string;
 }
 export function engineConfig(): EngineConfig | null {
   const {
@@ -28,49 +35,62 @@ export function engineConfig(): EngineConfig | null {
     sha256: sha256.toLowerCase(),
     context: 4096,
     maxTokens: 256,
-    memoryBytes: 4 * 1024 ** 3,
+    // This budget belongs to the pinned model/adapter, never to the developer's host.
+    // Other models must provide their own measured budget before admission.
+    memoryBytes: process.env.ACOS_MODEL_MEMORY_MB
+      ? Number(process.env.ACOS_MODEL_MEMORY_MB) * 1024 ** 2
+      : sha256.toLowerCase() ===
+          "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db"
+        ? 2 * 1024 ** 3
+        : 0,
+    maxThreads: process.env.ACOS_MAX_CPU_THREADS
+      ? Number(process.env.ACOS_MAX_CPU_THREADS)
+      : undefined,
+    backend: process.env.ACOS_COMPUTE_BACKEND ?? "auto",
     timeoutMs: 120_000,
   };
-}
-export function sandboxArgs(): string[] {
-  return [
-    "--unshare-all",
-    "--unshare-user",
-    "--unshare-pid",
-    "--unshare-net",
-    "--die-with-parent",
-    "--new-session",
-    "--cap-drop",
-    "ALL",
-    "--clearenv",
-    "--ro-bind",
-    "/usr",
-    "/usr",
-    "--symlink",
-    "usr/bin",
-    "/bin",
-    "--symlink",
-    "usr/lib",
-    "/lib",
-    "--symlink",
-    "usr/lib64",
-    "/lib64",
-    "--dev",
-    "/dev",
-    "--size",
-    "67108864",
-    "--tmpfs",
-    "/tmp",
-    "--chdir",
-    "/tmp",
-    "--setenv",
-    "PATH",
-    "/usr/bin",
-  ];
 }
 export class LocalEngine {
   config: EngineConfig | null;
   verified = false;
+  hardware: HardwareReport | null = null;
+  reservation: ComputePlan | null = null;
+  lastPlan: ComputePlan | null = null;
+  dataDirectory = process.cwd();
+  privateDirectory: string | null = null;
+  discover(probeIsolation = true) {
+    const previousIsolation = this.hardware?.isolation;
+    this.hardware = discoverHardware(
+      this.dataDirectory,
+      undefined,
+      probeIsolation,
+    );
+    if (!probeIsolation && previousIsolation)
+      this.hardware.isolation = previousIsolation;
+    return this.hardware;
+  }
+  private allocate() {
+    const config = this.config!;
+    const hardware = this.discover(false);
+    const plan = planCompute(
+      hardware,
+      [cpuProvider],
+      {
+        memoryBytes: config.memoryBytes,
+        acceleratorMemoryBytes: 0,
+        maxThreads:
+          config.maxThreads ??
+          Math.max(1, Math.min(32, hardware.cpu.usableThreads - 1)),
+      },
+      {
+        backend: config.backend ?? "auto",
+        allowCpu: true,
+        memoryFraction: 0.75,
+      },
+    );
+    this.lastPlan = plan;
+    return plan;
+  }
   private epoch = 0;
   private modelStamp = "";
   private async stamp() {
@@ -89,8 +109,20 @@ export class LocalEngine {
     this.verified = false;
     const epoch = this.epoch;
     const config = this.config;
+    this.discover();
+    this.allocate();
     config.binary = await realpath(config.binary);
     config.model = await realpath(config.model);
+    if (this.privateDirectory) {
+      const privateDir = await realpath(this.privateDirectory);
+      const engineDir = path.dirname(config.binary);
+      if (
+        privateDir === engineDir ||
+        privateDir.startsWith(engineDir + path.sep) ||
+        engineDir.startsWith(privateDir + path.sep)
+      )
+        throw new Error("Engine directory must not overlap private ACOS data.");
+    }
     if (
       !(await stat(config.binary)).isFile() ||
       !(await stat(config.model)).isFile()
@@ -128,6 +160,7 @@ export class LocalEngine {
       throw new Error(
         "Context budget exceeded. Start a new conversation or shorten the request. Durable memories are preserved.",
       );
+    this.allocate();
     const args = [
       "-m",
       "/model.gguf",
@@ -136,7 +169,7 @@ export class LocalEngine {
       "-n",
       String(maxTokens ?? this.config.maxTokens),
       "-t",
-      "2",
+      String(this.lastPlan?.threads ?? 1),
       "-ngl",
       "0",
       "--no-warmup",
@@ -188,11 +221,12 @@ export class LocalEngine {
             "/engine",
           ]
         : [];
+    this.reservation = this.lastPlan;
     return new Promise((resolve, reject) => {
       const child = spawn(
         "/usr/bin/prlimit",
         [
-          "--as=" + (config?.memoryBytes ?? 4 * 1024 ** 3),
+          "--as=" + (this.reservation?.memoryBytes ?? config?.memoryBytes ?? 0),
           "--cpu=120",
           "--core=0",
           "--nofile=128",
@@ -235,11 +269,13 @@ export class LocalEngine {
       child.on("error", (error) => {
         clearTimeout(timer);
         this.active = null;
+        this.reservation = null;
         reject(error);
       });
       child.on("close", (code, signal) => {
         clearTimeout(timer);
         this.active = null;
+        this.reservation = null;
         if (timedOut)
           reject(
             new Error(

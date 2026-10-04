@@ -43,7 +43,12 @@ export default function LocalAIEngineStatus() {
               "Output budget",
               `${state.host.maxOutputTokens} tokens / response`,
             ],
-            ["Accelerator", "CPU · 2 threads"],
+            [
+              "Compute",
+              state.host.compute
+                ? `${state.host.compute.backend} · ${state.host.compute.threads} threads`
+                : "Awaiting resource admission",
+            ],
             [
               "Tokenizer",
               state.engine === "READY"

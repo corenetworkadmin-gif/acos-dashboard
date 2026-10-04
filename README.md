@@ -6,13 +6,13 @@ This is the first host-runtime implementation toward the supplied ACOS architect
 
 ## Windows 11
 
-Use [the Windows setup guide](docs/windows.md) to install Ubuntu 24.04 on WSL2, run the setup script, and launch ACOS in your Windows browser. The reference engine supports Intel/AMD x64.
+Use [the Windows setup guide](docs/windows.md) to install Ubuntu 24.04 on WSL2, run the setup script, and launch ACOS in your Windows browser. The installer selects x64 or ARM64 tools; the optional bundled engine archive is x64 only. See [hardware discovery and limits](docs/hardware.md).
 
 ## Requirements
 
-- Linux x86_64 for the reference provider; Node.js 24+; pnpm 10+.
-- `bubblewrap` and `util-linux` (`bwrap`, `prlimit`), with unprivileged user, PID, mount, IPC, and network namespaces enabled.
-- At least 4 GB address space available for the inference process; 8 GB host RAM recommended for the reference setup.
+- Linux with a compatible Node.js 24+ build; pnpm 10+. The CPU provider supports x64/ARM64 with a matching engine binary.
+- For inference: `bubblewrap` and `util-linux` (`bwrap`, `prlimit`), with unprivileged user, PID, mount, IPC, and network namespaces enabled.
+- Memory requirements belong to the selected model. ACOS checks available resources before execution; the reference profile declares a 2 GiB process budget plus host headroom. Insufficient resources disable inference, not ACOS.
 - About 510 MB download plus installed files for the bundled reference model/engine. No GPU or provider credentials required.
 
 On Amazon Linux, install missing OS prerequisites with `sudo dnf install bubblewrap util-linux`. Other Linux distributions should use their own package manager. Never run the host as root.
@@ -21,7 +21,7 @@ On Amazon Linux, install missing OS prerequisites with `sudo dnf install bubblew
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm setup:engine
+pnpm setup:engine # optional x64 reference engine; omit to start without AI
 pnpm host
 ```
 

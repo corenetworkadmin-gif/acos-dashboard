@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { createHash, randomUUID } from "node:crypto";
-import { chmodSync, mkdirSync, realpathSync } from "node:fs";
+import { chmodSync, mkdirSync, realpathSync, existsSync } from "node:fs";
 import path from "node:path";
 import {
   capabilityReason,
@@ -51,9 +51,14 @@ export class HostRuntime {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     chmodSync(directory, 0o700);
     this.engine = engine;
+    engine.dataDirectory = directory;
+    engine.privateDirectory = directory;
+    engine.discover();
     if (engine.config) {
       const privateDir = realpathSync(directory);
-      const engineDir = realpathSync(path.dirname(engine.config.binary));
+      const engineDir = existsSync(path.dirname(engine.config.binary))
+        ? realpathSync(path.dirname(engine.config.binary))
+        : path.resolve(path.dirname(engine.config.binary));
       if (
         privateDir === engineDir ||
         privateDir.startsWith(engineDir + path.sep) ||
@@ -132,10 +137,17 @@ export class HostRuntime {
         ).length,
         contextLimit: this.engine.config?.context ?? 4096,
         maxOutputTokens: this.engine.config?.maxTokens ?? 256,
-        memoryReservation:
-          this.pending || this.loading
-            ? (this.engine.config?.memoryBytes ?? 0)
-            : 0,
+        memoryReservation: this.engine.reservation?.memoryBytes ?? 0,
+        hardware: this.engine.hardware,
+        compute: this.engine.lastPlan,
+        providers: [
+          {
+            backend: "cpu",
+            architectures: ["x64", "arm64"],
+            status:
+              "Requires configured compatible binary/model and successful load",
+          },
+        ],
         engineError: this.engineError,
       },
     };
