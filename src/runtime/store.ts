@@ -1,7 +1,8 @@
 import type { HardwareReport, ComputePlan } from "./hardware";
 import { useSyncExternalStore } from "react";
-import type { RuntimeState } from "./model";
-export type HostState = RuntimeState & {
+import type { RuntimeState, CapabilityView } from "./model";
+export type HostState = Omit<RuntimeState, "capabilities"> & {
+  capabilities: CapabilityView[];
   host: {
     connected: boolean;
     platform: string;

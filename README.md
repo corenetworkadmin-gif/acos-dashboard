@@ -95,3 +95,11 @@ pnpm build
 Tests cover policy denials, state persistence, interlock/cancellation, relocation, restart reconciliation, audit corruption, HTTP authorization/CSRF, and **actual Linux filesystem/network isolation**. They fail if required namespaces are unavailable. Unit tests use an explicit test engine; real model validation is additionally performed via the dashboard health check and chat. `pnpm lint` retains existing Fast Refresh warnings in the bundled shadcn components.
 
 For a built local dashboard use `pnpm build && pnpm preview` alongside `pnpm host`. `pnpm preview` is a local verification server, not a hardened Internet deployment.
+
+## Capability switches
+
+In **Capabilities**, an administrator can enable or disable policy for implemented providers. The switch is controlled by the host response: the host persists the grant and policy version in SQLite before reporting success. Saving disables further switch changes until the request completes; errors leave the confirmed state visible. The next operation checks that saved policy, action, target, mode, and runtime interlocks.
+
+Each row distinguishes **Attachment** (a governed provider exists), **Availability** (it is currently usable), **Policy** (the saved grant), and **Authorization** (current eligibility for operation checks). Enabling policy never attaches a provider or bypasses the administrator interlock. Close administrator controls before running companion operations. Core conversation has a fixed host policy and no editable switch; it can be attached while unavailable until a model is verified and loaded.
+
+Unattached providers cannot be enabled through the UI or API. At startup ACOS reconciles saved grants with this build's implemented provider contracts; saved metadata cannot invent a provider or change its target/mode. These contracts describe installed software, not the development machine's devices. `src/host/capabilities.test.ts` tests HTTP ON/OFF operations, restart persistence, unattached-provider rejection, and reconciliation of stale or invented provider metadata.

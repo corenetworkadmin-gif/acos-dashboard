@@ -22,6 +22,7 @@ export interface Capability {
   provider: string;
   enabled: boolean;
   available: boolean;
+  attached: boolean;
   minimumMode: Mode;
   target: string;
   configurable: boolean;
@@ -103,6 +104,100 @@ export interface RuntimeState {
   activity: AdminEvent[];
   imports: ImportReport[];
 }
+// This build's implemented provider contracts; never inferred from a GPU/device name
+// or restored from companion data. Policy grants are persisted separately from these facts.
+export function capabilityDefinitions(): Capability[] {
+  return [
+    {
+      id: "chat.send",
+      name: "Companion conversation",
+      description: "Exchange text through the engine interface.",
+      provider: "ACOS interaction",
+      enabled: true,
+      available: true,
+      attached: true,
+      minimumMode: "SAFE",
+      target: "companion/chat",
+      configurable: false,
+    },
+    {
+      id: "home.read",
+      name: "Read companion Home",
+      description: "Read durable memories in the companion’s Home.",
+      provider: "ACOS storage",
+      enabled: false,
+      available: true,
+      attached: true,
+      minimumMode: "SAFE",
+      target: "companion/home",
+      configurable: true,
+    },
+    {
+      id: "home.write",
+      name: "Write companion Home",
+      description: "Save a note to persistent companion memory.",
+      provider: "ACOS storage",
+      enabled: false,
+      available: true,
+      attached: true,
+      minimumMode: "SAFE",
+      target: "companion/home",
+      configurable: true,
+    },
+    {
+      id: "network.request",
+      name: "Internet access",
+      description: "Target-constrained outbound requests.",
+      provider: "Not attached",
+      enabled: false,
+      available: false,
+      attached: false,
+      minimumMode: "INTERMEDIATE",
+      target: "None configured",
+      configurable: true,
+    },
+    {
+      id: "device.microphone",
+      name: "Microphone",
+      description: "Audio input through an authorized device service.",
+      provider: "Not attached",
+      enabled: false,
+      available: false,
+      attached: false,
+      minimumMode: "ADVANCED",
+      target: "None configured",
+      configurable: true,
+    },
+    {
+      id: "device.camera",
+      name: "Camera",
+      description: "Visual input through an authorized device service.",
+      provider: "Not attached",
+      enabled: false,
+      available: false,
+      attached: false,
+      minimumMode: "ADVANCED",
+      target: "None configured",
+      configurable: true,
+    },
+    {
+      id: "remote.execute",
+      name: "Remote execution",
+      description: "Independent authorization for a remote target.",
+      provider: "Not attached",
+      enabled: false,
+      available: false,
+      attached: false,
+      minimumMode: "ADVANCED",
+      target: "None configured",
+      configurable: true,
+    },
+  ];
+}
+export interface CapabilityView extends Capability {
+  availabilityReason: string | null;
+  authorization: { allowed: boolean; reason: string | null };
+}
 export function initialState(): RuntimeState {
   return {
     version: 1,
@@ -120,85 +215,7 @@ export function initialState(): RuntimeState {
       source: "Local workspace",
       created: Date.now(),
     },
-    capabilities: [
-      {
-        id: "chat.send",
-        name: "Companion conversation",
-        description: "Exchange text through the engine interface.",
-        provider: "ACOS interaction",
-        enabled: true,
-        available: true,
-        minimumMode: "SAFE",
-        target: "companion/chat",
-        configurable: false,
-      },
-      {
-        id: "home.read",
-        name: "Read companion Home",
-        description: "Read durable memories in the companion’s Home.",
-        provider: "ACOS storage",
-        enabled: false,
-        available: true,
-        minimumMode: "SAFE",
-        target: "companion/home",
-        configurable: true,
-      },
-      {
-        id: "home.write",
-        name: "Write companion Home",
-        description: "Save a note to persistent companion memory.",
-        provider: "ACOS storage",
-        enabled: false,
-        available: true,
-        minimumMode: "SAFE",
-        target: "companion/home",
-        configurable: true,
-      },
-      {
-        id: "network.request",
-        name: "Internet access",
-        description: "Target-constrained outbound requests.",
-        provider: "Not attached",
-        enabled: false,
-        available: false,
-        minimumMode: "INTERMEDIATE",
-        target: "None configured",
-        configurable: true,
-      },
-      {
-        id: "device.microphone",
-        name: "Microphone",
-        description: "Audio input through an authorized device service.",
-        provider: "Not attached",
-        enabled: false,
-        available: false,
-        minimumMode: "ADVANCED",
-        target: "None configured",
-        configurable: true,
-      },
-      {
-        id: "device.camera",
-        name: "Camera",
-        description: "Visual input through an authorized device service.",
-        provider: "Not attached",
-        enabled: false,
-        available: false,
-        minimumMode: "ADVANCED",
-        target: "None configured",
-        configurable: true,
-      },
-      {
-        id: "remote.execute",
-        name: "Remote execution",
-        description: "Independent authorization for a remote target.",
-        provider: "Not attached",
-        enabled: false,
-        available: false,
-        minimumMode: "ADVANCED",
-        target: "None configured",
-        configurable: true,
-      },
-    ],
+    capabilities: capabilityDefinitions(),
     operations: [],
     messages: [],
     imports: [],
@@ -214,12 +231,14 @@ export function initialState(): RuntimeState {
 }
 export function capabilityReason(
   state: RuntimeState,
-  cap: Capability,
+  cap: Capability & { availabilityReason?: string | null },
 ): string | null {
   if (state.emergency) return "Emergency isolation is active";
   if (state.adminOpen) return "Administrator session is active";
   if (state.paused) return "Companion is paused";
-  if (!cap.available) return "Provider is not attached";
+  if (!cap.attached) return "Provider is not attached";
+  if (!cap.available)
+    return cap.availabilityReason ?? "Provider is unavailable";
   if (!cap.enabled) return "Capability is disabled";
   if (modes.indexOf(state.mode) < modes.indexOf(cap.minimumMode))
     return `Requires ${cap.minimumMode.toLowerCase()} mode`;
@@ -249,6 +268,7 @@ export const savedSchema = z.object({
       provider: z.string(),
       enabled: z.boolean(),
       available: z.boolean(),
+      attached: z.boolean().default(false),
       minimumMode: z.enum(modes),
       target: z.string(),
       configurable: z.boolean(),

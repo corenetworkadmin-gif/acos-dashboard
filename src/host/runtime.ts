@@ -4,6 +4,7 @@ import { chmodSync, mkdirSync, realpathSync, existsSync } from "node:fs";
 import path from "node:path";
 import {
   capabilityReason,
+  capabilityDefinitions,
   initialState,
   relocationSchema,
   savedSchema,
@@ -91,6 +92,19 @@ export class HostRuntime {
       this.state = row
         ? (savedSchema.parse(JSON.parse(row.value as string)) as RuntimeState)
         : initialState();
+      // Restore policy choices only. Saved metadata cannot attach/register a provider.
+      const persisted = this.state.capabilities;
+      this.state.capabilities = capabilityDefinitions().map((definition) => {
+        const saved = persisted.filter((cap) => cap.id === definition.id);
+        return {
+          ...definition,
+          enabled: definition.configurable
+            ? definition.attached && saved.length === 1 && saved[0].enabled
+            : definition.enabled,
+        };
+      });
+      if (JSON.stringify(persisted) !== JSON.stringify(this.state.capabilities))
+        this.state.policyVersion++;
       this.state.adminOpen = false;
       this.state.engine = "STOPPED";
       this.state.operations = this.state.operations.map((op) =>
@@ -120,9 +134,33 @@ export class HostRuntime {
       throw error;
     }
   }
+  private currentCapabilities() {
+    return this.state.capabilities.map((cap) => {
+      const available =
+        cap.attached &&
+        cap.available &&
+        (cap.id !== "chat.send" ||
+          (this.state.engine === "READY" && this.engine.verified));
+      return {
+        ...cap,
+        available,
+        availabilityReason: !cap.attached
+          ? "No governed provider is attached."
+          : !available
+            ? cap.id === "chat.send"
+              ? "Local engine is not ready. Verify and load a model first."
+              : "Attached provider is unavailable."
+            : null,
+      };
+    });
+  }
   snapshot() {
     return {
       ...this.state,
+      capabilities: this.currentCapabilities().map((cap) => {
+        const reason = capabilityReason(this.state, cap);
+        return { ...cap, authorization: { allowed: reason === null, reason } };
+      }),
       host: {
         connected: true,
         platform: process.platform,
@@ -248,14 +286,31 @@ export class HostRuntime {
   }
   setCapability(id: string, enabled: boolean) {
     this.requireAdmin();
+    this.requireIdle();
     const cap = this.state.capabilities.find((c) => c.id === id);
-    if (!cap?.configurable || !cap.available)
+    if (!cap) throw new Error("Unknown capability; policy was not changed.");
+    if (!cap.configurable)
+      throw new Error("This capability has a fixed host policy.");
+    if (enabled && (!cap.attached || !cap.available))
       throw new Error(
-        "Capability is not configurable or its provider is unavailable.",
+        "Provider is unavailable or not attached. Attach a governed provider before enabling this capability.",
       );
+    if (cap.enabled === enabled) return;
+    const previous = {
+      enabled: cap.enabled,
+      version: this.state.policyVersion,
+    };
     cap.enabled = enabled;
     this.state.policyVersion++;
-    this.save(`${id} ${enabled ? "enabled" : "disabled"}.`);
+    try {
+      this.save(
+        `${id} ${enabled ? "enabled" : "disabled"} by administrator policy v${this.state.policyVersion}.`,
+      );
+    } catch (error) {
+      cap.enabled = previous.enabled;
+      this.state.policyVersion = previous.version;
+      throw error;
+    }
   }
   rename(name: string) {
     this.requireAdmin();
@@ -344,7 +399,7 @@ export class HostRuntime {
       "VALIDATING",
       "Validating target, capability, policy, and resource requirements.",
     );
-    const cap = this.state.capabilities.find((c) => c.id === capability);
+    const cap = this.currentCapabilities().find((c) => c.id === capability);
     const actions: Record<string, string> = {
       "chat.send": "send",
       "home.read": "read",
@@ -439,7 +494,7 @@ export class HostRuntime {
     }
   }
   private prompt(input: string) {
-    const cap = this.state.capabilities.find((c) => c.id === "home.read")!;
+    const cap = this.currentCapabilities().find((c) => c.id === "home.read")!;
     const memories = capabilityReason(this.state, cap)
       ? ""
       : this.state.companion.memories.slice(-5).join("\n").slice(0, 700);
@@ -468,7 +523,7 @@ export class HostRuntime {
       throw new Error("Package checksum mismatch.");
     const pkg = relocationSchema.parse(raw.payload);
     const capabilities = pkg.capabilities.map((name) => {
-      const cap = this.state.capabilities.find((c) => c.id === name);
+      const cap = this.currentCapabilities().find((c) => c.id === name);
       return {
         name,
         status: !cap
