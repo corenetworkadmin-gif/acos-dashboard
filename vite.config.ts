@@ -1,22 +1,31 @@
-import { defineConfig } from 'vite'
-import dyadComponentTagger from '@dyad-sh/react-vite-component-tagger'
-import react from '@vitejs/plugin-react-swc'
-import { resolve } from 'path'
-
-export default defineConfig(() => ({
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react-swc";
+import { resolve } from "node:path";
+export default defineConfig({
   server: {
-    host: '::',
+    host: "0.0.0.0",
     port: 8080,
-  },
-  plugins: [dyadComponentTagger(), react()],
-  resolve: {
-    alias: {
-      '@': resolve(__dirname, './src'),
-      '~/': resolve(__dirname, './server'),
+    strictPort: true,
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:4317",
+        timeout: 150000,
+        proxyTimeout: 150000,
+      },
     },
   },
-  // Configure for Nitro-like server handling
-  optimizeDeps: {
-    exclude: ['@dyad-sh/react-vite-component-tagger'],
+  preview: {
+    host: "0.0.0.0",
+    port: 8080,
+    strictPort: true,
+    proxy: {
+      "/api": {
+        target: "http://127.0.0.1:4317",
+        timeout: 150000,
+        proxyTimeout: 150000,
+      },
+    },
   },
-}))
+  plugins: [react()],
+  resolve: { alias: { "@": resolve(import.meta.dirname, "./src") } },
+});
