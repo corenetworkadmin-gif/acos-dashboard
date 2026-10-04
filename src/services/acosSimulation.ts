@@ -209,13 +209,13 @@ let mockAdminInterlock: AdminInterlockState = {
     {
       timestamp: Date.now() - 30 * 60 * 1000,
       action: 'Admin panel opened',
-      status: 'COMPLETED',
+      status: 'COMPLETED' as const,
       details: 'Administrator accessed ACOS dashboard'
     },
     {
       timestamp: Date.now() - 25 * 60 * 1000,
       action: 'Capability modified: file.write',
-      status: 'COMPLETED',
+      status: 'COMPLETED' as const,
       details: 'Disabled file.write capability for security'
     }
   ]
@@ -230,7 +230,14 @@ const lifecycleStates = [
   'RESERVING_RESOURCES',
   'RUNNING',
   'COMPLETING',
-  'COMPLETED'
+  'COMPLETED',
+  'WAITING_FOR_AUTHORIZATION',
+  'DENIED',
+  'CANCELLED',
+  'TIMEOUT',
+  'FAILED',
+  'ABORTED',
+  'RECOVERY_REQUIRED'
 ] as const;
 
 // Generate a mock operation ID
@@ -247,7 +254,7 @@ function getTimestamp(): number {
 function addAuditEvent(operation: Operation, type: AuditEvent['type'], description: string, data?: Record<string, any>): Operation {
   const event: AuditEvent = {
     timestamp: getTimestamp(),
-    type,
+    type: type,
     description,
     data
   };
@@ -268,7 +275,7 @@ function transitionOperationState(operation: Operation): Operation {
       lifecycleState: nextState,
       auditEvents: [...operation.auditEvents, {
         timestamp: getTimestamp(),
-        type: 'STATE_CHANGE',
+        type: 'STATE_CHANGE' as const,
         description: `Transitioned to ${nextState} state`,
         data: { previousState: operation.lifecycleState, newState: nextState }
       }]
@@ -321,7 +328,7 @@ function allocateResourcesForOperation(operation: Operation): Operation {
   
   // Update global resources (in a real app, this would be state management)
   // For simulation, we'll just return the operation with updated audit
-  const updatedOp = addAuditEvent(operation, 'RESOURCE', 'Resources allocated for operation', {
+  const updatedOp = addAuditEvent(operation, 'RESOURCE' as const, 'Resources allocated for operation', {
     cpu: capability.resourceRequirements?.cpu || 0,
     memory: capability.resourceRequirements?.memory || 0,
     gpu: capability.resourceRequirements?.gpu || 0
@@ -361,7 +368,7 @@ function releaseResourcesFromOperation(operation: Operation): Operation {
   
   // Update global resources
   // For simulation, we'll just return the operation with updated audit
-  const updatedOp = addAuditEvent(operation, 'RESOURCE', 'Resources released from operation', {
+  const updatedOp = addAuditEvent(operation, 'RESOURCE' as const, 'Resources released from operation', {
     cpu: -(capability.resourceRequirements?.cpu || 0),
     memory: -(capability.resourceRequirements?.memory || 0),
     gpu: -(capability.resourceRequirements?.gpu || 0)
@@ -380,32 +387,32 @@ function initializeMockOperations() {
       timestamp: now - 5 * 60 * 1000,
       companionId: mockCompanionState.id,
       capability: 'chat.send',
-      action: 'Send message: "Hello, how can I help you?"',
+      action: 'Send message: \"Hello, how can I help you?\"',
       lifecycleState: 'COMPLETED',
       authorizationResult: 'APPROVED',
       securityState: 'NORMAL',
       auditEvents: [
         {
           timestamp: now - 5 * 60 * 1000 - 1000,
-          type: 'AUTHORIZATION',
+          type: 'AUTHORIZATION' as const,
           description: 'Operation authorized by administrator policy',
           data: { capability: 'chat.send', action: 'sendMessage' }
         },
         {
           timestamp: now - 5 * 60 * 1000 - 500,
-          type: 'RESOURCE',
+          type: 'RESOURCE' as const,
           description: 'Resources reserved: CPU 5%, Memory 10MB',
           data: { cpu: 5, memory: 10 }
         },
         {
           timestamp: now - 5 * 60 * 1000,
-          type: 'EXECUTION',
+          type: 'EXECUTION' as const,
           description: 'Message sent to user interface',
           data: { messageLength: 28 }
         },
         {
           timestamp: now - 5 * 60 * 1000 + 500,
-          type: 'COMPLETION',
+          type: 'COMPLETION' as const,
           description: 'Operation completed successfully',
           data: { result: 'Message delivered' }
         }
@@ -423,25 +430,25 @@ function initializeMockOperations() {
       auditEvents: [
         {
           timestamp: now - 12 * 60 * 1000 - 1000,
-          type: 'AUTHORIZATION',
+          type: 'AUTHORIZATION' as const,
           description: 'Operation authorized by administrator policy',
           data: { capability: 'file.read', action: 'readFile' }
         },
         {
           timestamp: now - 12 * 60 * 1000 - 500,
-          type: 'RESOURCE',
+          type: 'RESOURCE' as const,
           description: 'Resources reserved: CPU 2%, Memory 5MB',
           data: { cpu: 2, memory: 5 }
         },
         {
           timestamp: now - 12 * 60 * 1000,
-          type: 'EXECUTION',
+          type: 'EXECUTION' as const,
           description: 'File read successfully',
           data: { fileSize: 2048, path: '/acos/config/system.json' }
         },
         {
           timestamp: now - 12 * 60 * 1000 + 500,
-          type: 'COMPLETION',
+          type: 'COMPLETION' as const,
           description: 'Operation completed successfully',
           data: { result: 'Configuration loaded' }
         }
@@ -472,7 +479,7 @@ export const acosSimulationService = {
         {
           timestamp: Date.now(),
           action: `Capability ${authorized ? 'enabled' : 'disabled'}: ${mockCapabilities[capabilityIndex].name}`,
-          status: 'COMPLETED',
+          status: 'COMPLETED' as const,
           details: `Administrator changed authorization status`
         }
       ].slice(-10); // Keep last 10 activities
@@ -516,7 +523,7 @@ export const acosSimulationService = {
     };
     
     // Simulate the operation lifecycle
-    let processedOperation = addAuditEvent(newOperation, 'AUTHORIZATION', 'Operation submitted for authorization', {
+    let processedOperation = addAuditEvent(newOperation, 'AUTHORIZATION' as const, 'Operation submitted for authorization', {
       capability: capabilityName,
       action
     });
@@ -527,7 +534,7 @@ export const acosSimulationService = {
       authorizationResult: 'APPROVED',
       auditEvents: [...processedOperation.auditEvents, {
         timestamp: getTimestamp(),
-        type: 'AUTHORIZATION',
+        type: 'AUTHORIZATION' as const,
         description: 'Operation authorized by built-in policy',
         data: { capability: capabilityName, action }
       }]
@@ -540,7 +547,7 @@ export const acosSimulationService = {
       
       // Add execution event when we reach RUNNING state
       if (currentOp.lifecycleState === 'RUNNING') {
-        currentOp = addAuditEvent(currentOp, 'EXECUTION', `Executing action: ${action}`, {
+        currentOp = addAuditEvent(currentOp, 'EXECUTION' as const, `Executing action: ${action}`, {
           capability: capabilityName,
           action
         });
@@ -548,7 +555,7 @@ export const acosSimulationService = {
     }
     
     // Add completion event
-    const completedOp = addAuditEvent(currentOp, 'COMPLETION', 'Operation completed successfully', {
+    const completedOp = addAuditEvent(currentOp, 'COMPLETION' as const, 'Operation completed successfully', {
       capability: capabilityName,
       action,
       result: `Successfully executed ${action}`
@@ -617,9 +624,9 @@ export const acosSimulationService = {
       {
         timestamp: Date.now(),
         action: engaged ? 'Admin control interlock engaged' : 'Admin control interlock disengaged',
-        status: 'COMPLETED',
+        status: 'COMPLETED' as const,
         details: engaged ? 
-          'Administrator took control - companion paused and network isolated' :
+          'Administrator took control - companion paused and network isolated' : 
           'Administrator released control - companion resumed normal operation'
       }
     ].slice(-10); // Keep last 10 activities

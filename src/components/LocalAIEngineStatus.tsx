@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { LucideIcon, Zap, Monitor, Settings, CheckCircle, XCircle, Loader2, RefreshCw } from 'lucide-react';
+import { Zap, Monitor, Settings, Loader2, RefreshCw, Activity, HardDrive, Cpu } from 'lucide-react';
 import { acosSimulationService } from '../services/acosSimulation';
 import { LocalAIEngine } from '../types/acos';
 
@@ -171,7 +171,7 @@ const LocalAIEngineStatus = () => {
       <div className="space-y-4">
         <div className="border-t border-white/10 pt-4">
           <div className="flex items-center space-x-3 mb-3">
-            <LucideIcon className="w-5 h-5" type="activity" />
+            <Activity className="w-5 h-5" />
             <h4 className="font-semibold text-cyan-300">Resource Utilization</h4>
           </div>
           
@@ -186,7 +186,7 @@ const LocalAIEngineStatus = () => {
             
             <div className="space-y-2">
               <div className="flex justify-between text-sm text-cyan-300">
-                <span>Memory Usage</span
+                <span>Memory Usage</span>
                 <span className="font-mono">{engine.resourceUsage.memory}%</span>
               </div>
               <Progress value={engine.resourceUsage.memory} className="h-2.5" />
@@ -204,7 +204,7 @@ const LocalAIEngineStatus = () => {
         
         <div className="border-t border-white/10 pt-4">
           <div className="flex items-center space-x-3 mb-3">
-            <LucideIcon className="w-5 h-5" type="memory" />
+            <HardDrive className="w-5 h-5" />
             <h4 className="font-semibold text-cyan-300">Context Window</h4>
           </div>
           
@@ -227,13 +227,13 @@ const LocalAIEngineStatus = () => {
         
         <div className="border-t border-white/10 pt-4">
           <div className="flex items-center space-x-3 mb-3">
-            <LucideIcon className="w-5 h-5" type="zap" />
+            <Zap className="w-5 h-5" />
             <h4 className="font-semibold text-cyan-300">Accelerator Utilization</h4>
           </div>
           
           <div className="space-y-3">
             <div className="flex items-center space-x-3 text-sm text-cyan-300">
-              <LucideIcon className="w-4 h-4" type="cpu" />
+              <Cpu className="w-4 h-4" />
               <span>CPU:</span> 
               <span className="ml-2">
                 {engine.acceleratorUtilization.cpu ? 
@@ -243,7 +243,7 @@ const LocalAIEngineStatus = () => {
               </span>
             </div>
             <div className="flex items-center space-x-3 text-sm text-cyan-300">
-              <LucideIcon className="w-4 h-4" type="zap" />
+              <Zap className="w-4 h-4" />
               <span>GPU:</span> 
               <span className="ml-2">
                 {engine.acceleratorUtilization.gpu ? 
@@ -253,7 +253,7 @@ const LocalAIEngineStatus = () => {
               </span>
             </div>
             <div className="flex items-center space-x-3 text-sm text-cyan-300">
-              <LucideIcon className="w-4 h-4" type="zap" />
+              <Zap className="w-4 h-4" />
               <span>NPU:</span> 
               <span className="ml-2">
                 {engine.acceleratorUtilization.npu ? 

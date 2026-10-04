@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { LucideIcon, CheckCircle, XCircle, Loader2, Clock, RefreshCw } from 'lucide-react';
+import { CheckCircle, XCircle, Loader2, Clock, RefreshCw, List } from 'lucide-react';
 import { acosSimulationService } from '../services/acosSimulation';
 
 const OperationLog = () => {
@@ -114,7 +114,7 @@ const OperationLog = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="font-semibold text-cyan-300 flex items-center space-x-2">
-          <LucideIcon className="w-5 h-5" type="list" />
+          <List className="w-5 h-5" />
           Operation Log
         </h3>
         <button 
@@ -162,8 +162,7 @@ const OperationLog = () => {
                     ? "bg-green-500/20 text-green-400" 
                     : op.authorizationResult === 'DENIED'
                       ? "bg-red-500/20 text-red-400"
-                      : "bg-yellow-500/20 text-yellow-400"}
-                >
+                      : "bg-yellow-500/20 text-yellow-400"}>
                   {op.authorizationResult}
                 </Badge>
               </TableCell>
@@ -176,8 +175,7 @@ const OperationLog = () => {
                       ? "bg-yellow-500/20 text-yellow-400"
                       : op.securityState === 'ISOLATED' || op.securityState === 'EMERGENCY_ISOLATION'
                         ? "bg-red-500/20 text-red-400"
-                        : "bg-blue-500/20 text-blue-400"}
-                >
+                        : "bg-blue-500/20 text-blue-400"}>
                   {op.securityState}
                 </Badge>
               </TableCell>

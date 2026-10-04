@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Progress } from "@/components/ui/progress";
-import { LucideIcon, Activity, Server, Zap, Monitor, Loader2, RefreshCw } from 'lucide-react';
+import { Activity, Server, Zap, Monitor, Loader2, RefreshCw, HardDrive, Info } from 'lucide-react';
 import { acosSimulationService } from '../services/acosSimulation';
 
 const ResourceMonitor = () => {
@@ -91,7 +91,7 @@ const ResourceMonitor = () => {
               case 'MEMORY': return Monitor;
               case 'GPU': return Zap;
               case 'NETWORK': return Server;
-              case 'STORAGE': return LucideIcon; // We'll use hard-drive equivalent
+              case 'STORAGE': return HardDrive; // Hard-drive equivalent
               default: return Activity;
             }
           };
@@ -127,7 +127,7 @@ const ResourceMonitor = () => {
       {/* Resource Details */}
       <div className="border-t border-white/10 pt-4">
         <div className="flex items-center space-x-3 mb-3">
-          <LucideIcon className="w-5 h-5" type="info" />
+          <Info className="w-5 h-5" />
           <h4 className="font-semibold text-cyan-300">Resource Allocation Details</h4>
         </div>
         

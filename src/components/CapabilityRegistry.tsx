@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { LucideIcon, Settings, Check, X, Loader2, RefreshCw } from 'lucide-react';
+import { Settings, Check, X, Loader2, RefreshCw, Server, Code, Cpu, ExternalLink } from 'lucide-react';
 import { acosSimulationService } from '../services/acosSimulation';
 
 const CapabilityRegistry = () => {
@@ -80,7 +80,7 @@ const CapabilityRegistry = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <LucideIcon className="w-5 h-5" type="settings" />
+          <Settings className="w-5 h-5" />
           <h3 className="font-semibold text-cyan-300">Capability Registry</h3>
         </div>
         <button 
@@ -189,7 +189,7 @@ const CapabilityRegistry = () => {
       {/* Providers Section */}
       <div className="border-t border-white/10 pt-4">
         <div className="flex items-center space-x-3 mb-3">
-          <LucideIcon className="w-5 h-5" type="server" />
+          <Server className="w-5 h-5" />
           <h4 className="font-semibold text-cyan-300">Provider Registry</h4>
         </div>
         
@@ -198,10 +198,11 @@ const CapabilityRegistry = () => {
             <div key={provider.id} className="bg-black/30 rounded p-3">
               {/* Provider Header */}
               <div className="flex items-center space-x-3 mb-2">
-                <LucideIcon 
-                  className="w-4 h-4" 
-                  type={provider.type === 'BUILTIN' ? 'cpu' : 'external-link'} 
-                />
+                {provider.type === 'BUILTIN' ? (
+                  <Cpu className="w-4 h-4" />
+                ) : (
+                  <ExternalLink className="w-4 h-4" />
+                )}
                 <span className="font-medium text-cyan-300">{provider.name}</span>
                 <span className="px-2 py-0.5 text-xs rounded bg-cyan-500/20 text-cyan-400">
                   {provider.type}
@@ -212,7 +213,7 @@ const CapabilityRegistry = () => {
               <div className="space-y-1">
                 {provider.implementations.map((impl) => (
                   <div key={impl.id} className="flex items-center space-x-3 text-sm text-cyan-300">
-                    <LucideIcon className="w-3 h-3" type="code" />
+                    <Code className="w-3 h-3" />
                     <span>{impl.name}</span>
                     <span className="flex-1"></span>
                     <span className="text-xs">
@@ -224,7 +225,7 @@ const CapabilityRegistry = () => {
                           ? 'text-green-400 bg-green-500/20' 
                           : impl.availability === 'DEGRADED' 
                             ? 'text-yellow-400 bg-yellow-500/20' 
-                            : 'text-red-400 bg-red-500/20'}
+                            : 'text-red-400 bg-red-500/20'}\
                       `}
                     >
                       {impl.availability}
