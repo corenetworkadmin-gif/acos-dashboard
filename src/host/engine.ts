@@ -1,3 +1,4 @@
+import { executionLimits } from "./limits.ts";
 import { discoverHardware } from "./hardware.ts";
 import { cpuProvider, planCompute } from "./resources.ts";
 import type { HardwareReport, ComputePlan } from "../runtime/hardware.ts";
@@ -16,6 +17,7 @@ export interface EngineConfig {
   context: number;
   maxTokens: number;
   memoryBytes: number;
+  addressSpaceBytes?: number;
   timeoutMs: number;
   maxThreads?: number;
   backend?: string;
@@ -36,13 +38,20 @@ export function engineConfig(): EngineConfig | null {
     context: 4096,
     maxTokens: 256,
     // This budget belongs to the pinned model/adapter, never to the developer's host.
-    // Other models must provide their own measured budget before admission.
-    memoryBytes: process.env.ACOS_MODEL_MEMORY_MB
-      ? Number(process.env.ACOS_MODEL_MEMORY_MB) * 1024 ** 2
-      : sha256.toLowerCase() ===
-          "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db"
-        ? 2 * 1024 ** 3
-        : 0,
+    // Other models must provide their own measured working-RAM budget before admission.
+    memoryBytes:
+      (process.env.ACOS_MODEL_RAM_MB ?? process.env.ACOS_MODEL_MEMORY_MB)
+        ? Number(
+            process.env.ACOS_MODEL_RAM_MB ?? process.env.ACOS_MODEL_MEMORY_MB,
+          ) *
+          1024 ** 2
+        : sha256.toLowerCase() ===
+            "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db"
+          ? 2 * 1024 ** 3
+          : 0,
+    addressSpaceBytes: process.env.ACOS_ADDRESS_SPACE_MB
+      ? Number(process.env.ACOS_ADDRESS_SPACE_MB) * 1024 ** 2
+      : undefined,
     maxThreads: process.env.ACOS_MAX_CPU_THREADS
       ? Number(process.env.ACOS_MAX_CPU_THREADS)
       : undefined,
@@ -88,6 +97,7 @@ export class LocalEngine {
         memoryFraction: 0.75,
       },
     );
+    executionLimits(config, plan.threads);
     this.lastPlan = plan;
     return plan;
   }
@@ -170,6 +180,8 @@ export class LocalEngine {
       String(maxTokens ?? this.config.maxTokens),
       "-t",
       String(this.lastPlan?.threads ?? 1),
+      "-tb",
+      String(this.lastPlan?.threads ?? 1),
       "-ngl",
       "0",
       "--no-warmup",
@@ -221,13 +233,17 @@ export class LocalEngine {
             "/engine",
           ]
         : [];
+    if (!config || !this.lastPlan)
+      throw new Error("Resources have not been admitted.");
+    const limits = executionLimits(config, this.lastPlan.threads);
     this.reservation = this.lastPlan;
     return new Promise((resolve, reject) => {
       const child = spawn(
         "/usr/bin/prlimit",
         [
-          "--as=" + (this.reservation?.memoryBytes ?? config?.memoryBytes ?? 0),
-          "--cpu=120",
+          "--as=" + limits.addressSpaceBytes,
+          "--cpu=" + limits.cpuSeconds,
+          "--stack=" + limits.stackBytes,
           "--core=0",
           "--nofile=128",
           "--fsize=1048576",
@@ -235,9 +251,9 @@ export class LocalEngine {
           "/usr/bin/bwrap",
           ...sandboxArgs(),
           ...mounts,
-          "/usr/bin/prlimit",
-          "--nproc=64",
-          "--",
+          "--setenv",
+          "MALLOC_ARENA_MAX",
+          "2",
           command,
           ...args,
         ],
@@ -283,7 +299,14 @@ export class LocalEngine {
             ),
           );
         else if (overflow) reject(new Error("Engine output limit exceeded."));
-        else if (signal) reject(new Error("Inference cancelled."));
+        else if (signal)
+          reject(
+            new Error(
+              signal === "SIGXCPU"
+                ? "Engine exceeded its aggregate CPU-time budget."
+                : "Inference cancelled or terminated by a host resource limit.",
+            ),
+          );
         else if (code !== 0)
           reject(
             new Error(`Isolated engine failed (${code}): ${err.slice(-800)}`),

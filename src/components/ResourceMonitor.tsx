@@ -82,8 +82,9 @@ export default function ResourceMonitor() {
           {hardware.isolation.reason && <p>{hardware.isolation.reason}</p>}
           <p className="text-muted-foreground">
             {hardware.environment}. Resource availability can change. ACOS
-            reserves one inference slot and enforces a process address-space
-            limit; this is not an OS guarantee of physical RAM.
+            reserves one inference slot and enforces a separate virtual
+            address-space limit. Per-job physical RAM and process-count
+            containment are not implemented.
           </p>
           <details className="text-muted-foreground">
             <summary>Discovery details</summary>

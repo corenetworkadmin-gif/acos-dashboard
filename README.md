@@ -1,5 +1,7 @@
 # ACOS — Companion Workspace
 
+[Testing guide](docs/testing.md) · [Resource-limit audit](docs/resource-limits.md) · [MIT license](LICENSE)
+
 A working React dashboard and a Linux host runtime for **one companion**, with real offline CPU inference, durable Home storage, explicit capabilities, an administrator interlock, and correlated operation audit.
 
 This is the first host-runtime implementation toward the supplied ACOS architecture (the attachment is titled v0.7, but its content specifies revision v0.8). It is **not a standalone operating system or the complete 89-section specification**. See [implementation status](docs/implementation-status.md) for the exact boundary.
@@ -12,7 +14,7 @@ Use [the Windows setup guide](docs/windows.md) to install Ubuntu 24.04 on WSL2, 
 
 - Linux with a compatible Node.js 24+ build; pnpm 10+. The CPU provider supports x64/ARM64 with a matching engine binary.
 - For inference: `bubblewrap` and `util-linux` (`bwrap`, `prlimit`), with unprivileged user, PID, mount, IPC, and network namespaces enabled.
-- Memory requirements belong to the selected model. ACOS checks available resources before execution; the reference profile declares a 2 GiB process budget plus host headroom. Insufficient resources disable inference, not ACOS.
+- Memory requirements belong to the selected model. ACOS checks available resources before execution; the reference profile declares a 2 GiB working-RAM estimate plus host headroom and a separate virtual address-space ceiling. Insufficient resources disable inference, not ACOS.
 - About 510 MB download plus installed files for the bundled reference model/engine. No GPU or provider credentials required.
 
 On Amazon Linux, install missing OS prerequisites with `sudo dnf install bubblewrap util-linux`. Other Linux distributions should use their own package manager. Never run the host as root.
@@ -66,7 +68,7 @@ The dashboard is local administration software. Do not expose the Vite developme
 - An allowlisted contract mediates `chat.send`, `home.read`, and `home.write`. Actual Home is SQLite state, not arbitrary host filesystem access.
 - Every companion operation records identity, target, policy version, transitions, result/failure/cancellation, and resource release. SQLite transactions commit state and hash-linked audit entries together. Startup verifies the chain and reconciles interrupted operations.
 - Opening administrator controls blocks admission before cancelling and waiting for inference. Emergency isolation terminates the process group independently of model output. Releasing it requires a separate resume.
-- Inference uses `bwrap --unshare-all`, dropped capabilities, empty environment, read-only engine/model/system libraries, a 64 MB temporary filesystem, and no mounted host Home, credentials, or `/proc`. `prlimit` bounds address space, CPU time, file sizes, descriptors, processes, and core dumps. A wall timeout and output-size cap terminate failed execution.
+- Inference uses `bwrap --unshare-all`, dropped capabilities, empty environment, read-only engine/model/system libraries, a 64 MB temporary filesystem, and no mounted host Home, credentials, or `/proc`. `prlimit` bounds virtual address space, aggregate process CPU time, stack size, file sizes, descriptors, and core dumps. CPU allowance scales with workers; no UID-wide process-count limit is imposed. Per-job physical-memory and process-count containment remain unimplemented. A wall timeout and output-size cap terminate failed execution.
 - Model text is never executed as shell, code, or tools. Network, microphone, camera, and remote-execution entries are unavailable declarations with no executable provider. No financial, replication, or propagation capability exists.
 - The administrator and host OS remain trusted. The hash-linked audit is detectable-corruption evidence, not a signature against a malicious root/admin. This is not a hostile multi-user security certification, encrypted storage, or hardware-backed key management.
 
@@ -103,3 +105,17 @@ In **Capabilities**, an administrator can enable or disable policy for implement
 Each row distinguishes **Attachment** (a governed provider exists), **Availability** (it is currently usable), **Policy** (the saved grant), and **Authorization** (current eligibility for operation checks). Enabling policy never attaches a provider or bypasses the administrator interlock. Close administrator controls before running companion operations. Core conversation has a fixed host policy and no editable switch; it can be attached while unavailable until a model is verified and loaded.
 
 Unattached providers cannot be enabled through the UI or API. At startup ACOS reconciles saved grants with this build's implemented provider contracts; saved metadata cannot invent a provider or change its target/mode. These contracts describe installed software, not the development machine's devices. `src/host/capabilities.test.ts` tests HTTP ON/OFF operations, restart persistence, unattached-provider rejection, and reconciliation of stale or invented provider metadata.
+
+## Screenshots
+
+Synthetic demonstration data; these are actual dashboard and local-model chat captures.
+
+![ACOS dashboard](docs/images/dashboard.png)
+
+![ACOS local chat](docs/images/chat.png)
+
+## License
+
+Project code is available under the [MIT License](LICENSE). Dependencies, downloaded engine binaries and model weights retain their own upstream licenses; this repository's license does not replace those terms.
+
+Suggested GitHub About description: **ACOS companion workspace: local AI, persistent memory, explicit capability policy, and hardware discovery with an isolated Linux host runtime.**
