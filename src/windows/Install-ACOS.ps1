@@ -1,27 +1,43 @@
 # ACOS Windows 11 installer (handoff: "usable installed Windows 11 application").
 #
-# This script automates the whole first-run path on a fresh Windows 11 machine:
+# Automates the whole first-run path on a fresh Windows 11 machine:
 #   1. Verifies Windows 11 and enables the WSL2 feature if needed.
 #   2. Installs the Ubuntu-24.04 distribution.
 #   3. Clones or updates the ACOS repository inside the Linux home.
 #   4. Runs the Linux setup (pinned Node/pnpm, dependencies, dashboard build).
 #   5. Creates Start Menu and Desktop shortcuts plus a launcher.
+#   6. Optionally verifies the install with verify-windows.ps1 (-Verify).
 #
-# Run in an elevated PowerShell:  powershell -ExecutionPolicy Bypass -File Install-ACOS.ps1
+# Run in an elevated PowerShell:
+#   powershell -ExecutionPolicy Bypass -File Install-ACOS.ps1
+#   powershell -ExecutionPolicy Bypass -File Install-ACOS.ps1 -Verify
+#   powershell -ExecutionPolicy Bypass -File Install-ACOS.ps1 -DryRun
 #
 # NOTE: This script is authored for Windows and is NOT executed in the Linux
-# development sandbox. See docs/windows.md ("Verification scope"). The Linux side
-# it drives (setup-wsl.sh, start-local.sh) is tested in the sandbox.
+# development sandbox. The Linux side it drives (setup-wsl.sh, start-local.sh) is
+# tested in the sandbox. Run verify-windows.ps1 on real hardware to confirm.
 
 [CmdletBinding()]
 param(
   [string]$Distro = "Ubuntu-24.04",
   [string]$RepoUrl = "https://github.com/corenetworkadmin-gif/acos-dashboard.git",
   [string]$InstallDir = "~/acos-dashboard",
-  [switch]$SkipSetup
+  [ValidateSet("wsl2", "native")]
+  [string]$Runtime = "wsl2",
+  [switch]$SkipSetup,
+  [switch]$Verify,
+  [switch]$DryRun
 )
 
 $ErrorActionPreference = "Stop"
+
+function Invoke-Step {
+  # Honours -DryRun: prints the action instead of performing it.
+  param([string]$Description, [scriptblock]$Action)
+  if ($DryRun) { Write-Host "  [dry-run] $Description" -ForegroundColor Yellow; return }
+  Write-Host "  $Description"
+  & $Action
+}
 
 function Assert-Admin {
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -49,27 +65,27 @@ function Get-WslDistros {
 
 function Ensure-Wsl {
   if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
-    Write-Host "Enabling the Windows Subsystem for Linux feature..."
-    & wsl.exe --install --no-distribution
-    Write-Host "WSL was installed. A reboot may be required; re-run this installer afterwards."
+    Invoke-Step "Enable the Windows Subsystem for Linux feature" { & wsl.exe --install --no-distribution }
+    Write-Host "WSL was installed. A reboot may be required; re-run this installer afterwards." -ForegroundColor Yellow
     return $false
   }
   $distros = Get-WslDistros
   if ($distros -notcontains $Distro) {
-    Write-Host "Installing the $Distro distribution (this downloads a few hundred MB)..."
-    & wsl.exe --install -d $Distro --no-launch
+    Invoke-Step "Install the $Distro distribution (downloads a few hundred MB)" { & wsl.exe --install -d $Distro --no-launch }
   }
   return $true
 }
 
 function Invoke-InDistro {
   param([string]$Command)
+  if ($DryRun) { Write-Host "  [dry-run] wsl -d $Distro --exec bash -lc `"$Command`"" -ForegroundColor Yellow; return }
   & wsl.exe --distribution $Distro --exec bash -lc $Command
   if ($LASTEXITCODE -ne 0) { throw "Command failed inside $Distro (exit $LASTEXITCODE): $Command" }
 }
 
 function New-Shortcuts {
   $launcher = Join-Path $env:LOCALAPPDATA "ACOS\Start-ACOS.cmd"
+  if ($DryRun) { Write-Host "  [dry-run] create launcher $launcher and Start Menu/Desktop shortcuts" -ForegroundColor Yellow; return }
   New-Item -ItemType Directory -Force -Path (Split-Path $launcher) | Out-Null
   $cmd = @"
 @echo off
@@ -97,9 +113,32 @@ if errorlevel 1 (
   Write-Host "Created Start Menu and Desktop shortcuts."
 }
 
+function Install-NativeHelper {
+  # The native runtime needs acos-isolate.exe. It is a reference implementation
+  # (see src/windows/native/README.md) and is not validated yet, so this path is
+  # opt-in and clearly labelled.
+  Write-Host "Native runtime requested. Native Windows isolation is not yet validated;" -ForegroundColor Yellow
+  Write-Host "the managed WSL2 guest runtime remains the supported path." -ForegroundColor Yellow
+  $helper = Join-Path $env:LOCALAPPDATA "ACOS\acos-isolate.exe"
+  if (Test-Path $helper) {
+    Write-Host "Found existing helper at $helper."
+  } elseif (Get-Command cl.exe -ErrorAction SilentlyContinue) {
+    Invoke-Step "Build acos-isolate.exe with MSVC" {
+      Push-Location (Join-Path $InstallDir "src\windows\native")
+      & cl.exe /nologo /std:c++17 /EHsc /O2 acos-isolate.cpp /link Advapi32.lib Userenv.lib Kernel32.lib Fwpuclnt.lib Ws2_32.lib
+      New-Item -ItemType Directory -Force -Path (Split-Path $helper) | Out-Null
+      Copy-Item -Force "acos-isolate.exe" $helper
+      Pop-Location
+    }
+  } else {
+    Write-Host "MSVC (cl.exe) not found. Build src/windows/native/acos-isolate.cpp manually." -ForegroundColor Yellow
+  }
+}
+
 function Main {
   Assert-Admin
   Test-Windows11
+  if ($Runtime -eq "native") { Install-NativeHelper }
   if (-not (Ensure-Wsl)) { return }
 
   Write-Host "Preparing the ACOS checkout inside $Distro..."
@@ -114,6 +153,15 @@ function Main {
   }
 
   New-Shortcuts
+
+  if ($Verify) {
+    Write-Host "Verifying the installation..." -ForegroundColor Cyan
+    $verify = Join-Path $InstallDir "src\windows\verify-windows.ps1"
+    if ($DryRun) { Write-Host "  [dry-run] powershell -File $verify -Runtime $Runtime" -ForegroundColor Yellow }
+    elseif (Test-Path $verify) { & powershell -ExecutionPolicy Bypass -File $verify -Runtime $Runtime -Distro $Distro -InstallDir $InstallDir }
+    else { Write-Host "  verify-windows.ps1 not found; skipping." -ForegroundColor Yellow }
+  }
+
   Write-Host ""
   Write-Host "ACOS is installed." -ForegroundColor Green
   Write-Host "  1. Launch ACOS from the Desktop or Start Menu shortcut."
@@ -121,6 +169,7 @@ function Main {
   Write-Host "  3. Paste it into the dashboard, open the Local engine panel, and load the model."
   Write-Host ""
   Write-Host "Optional AI engine: run inside Ubuntu ->  cd $InstallDir && pnpm setup:engine"
+  Write-Host "Verify at any time:  powershell -File src\windows\verify-windows.ps1"
 }
 
 Main

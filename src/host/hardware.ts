@@ -9,7 +9,7 @@ import {
 } from "node:os";
 import path from "node:path";
 import type { Accelerator, HardwareReport } from "../runtime/hardware.ts";
-import { sandboxArgs } from "./sandbox.ts";
+import { probeIsolation as probeHostIsolation } from "./isolation.ts";
 
 // Dependency injection is only for discovery fixtures; production uses the installed host.
 export interface DiscoverySource {
@@ -218,21 +218,9 @@ export function discoverHardware(
     available: false,
     reason: "Isolation has not been probed.",
   };
-  if (probeIsolation) {
-    try {
-      if (source.platform !== "linux")
-        throw new Error("This isolation provider requires Linux.");
-      source.run("/usr/bin/prlimit", ["--version"]);
-      source.run("/usr/bin/bwrap", [...sandboxArgs(), "/bin/true"]);
-      isolation = { available: true, reason: null };
-    } catch {
-      isolation = {
-        available: false,
-        reason:
-          "Required Linux namespaces, Bubblewrap, or prlimit unavailable. Inference is disabled.",
-      };
-    }
-  }
+  // Isolation is its own layer: the platform adapter decides whether confinement
+  // is enforceable, independently of CPU/RAM/accelerator discovery.
+  if (probeIsolation) isolation = probeHostIsolation(source);
   return {
     discoveredAt: new Date().toISOString(),
     platform: source.platform,

@@ -7,8 +7,16 @@ The local AI runtime runs in **Ubuntu 24.04 on WSL2**, and the dashboard opens i
 > clones or updates the checkout, runs the Linux setup, and creates Desktop and
 > Start Menu shortcuts. It is authored for Windows and is not executed in the
 > Linux development sandbox; the sections below remain the manual path and the
-> troubleshooting reference. A native (non-WSL2) isolation adapter is specified
-> in [windows-native-isolation.md](windows-native-isolation.md).
+> troubleshooting reference.
+>
+> The installer takes `-Runtime wsl2|native`, `-DryRun` (print actions, change
+> nothing) and `-Verify` (run the enforcement harness afterwards). The
+> uninstaller `src/windows/Uninstall-ACOS.ps1` takes the same `-Runtime`,
+> `-DryRun`, `-Verify` and `-Purge` switches. A native (non-WSL2) isolation
+> adapter — TypeScript adapter, native helper source and a six-point verification
+> harness — is implemented in [windows-native-isolation.md](windows-native-isolation.md);
+> its OS enforcement is **unverified** until `verify-windows.ps1` passes on real
+> Windows 11 hardware. WSL2 remains the supported default.
 
 Allow space for the selected dependencies and Internet access for installation. The optional engine checks for 1.5 GiB free on its destination filesystem. Model loading checks actual available guest memory; no fixed Windows RAM size or GPU is required. Model execution is offline after installation. Your computer must remain awake and the launcher must remain running to use ACOS.
 
@@ -103,6 +111,14 @@ Paste it into the dashboard’s Administrator key field. Do not send this key in
 ## Verification scope
 
 The Linux host, sandbox, combined launcher, HTTP proxy, shutdown behavior, and build are tested in the development sandbox. Actual WSL installation, Windows browser forwarding, and the `.cmd` launcher require verification on your Windows computer; this repository cannot remotely configure that machine.
+
+For the **native** isolation path, run the enforcement harness on the target machine after installing:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File src/windows/verify-windows.ps1 -Runtime native
+```
+
+It checks six guarantees (cannot read `%USERPROFILE%`, cannot open a socket, memory limit enforced, killing the job reaps descendants, cannot read the admin key, wall-clock deadline reclaims the job) and exits non-zero on any failure. Use `-Runtime wsl2` to run the equivalent checks inside Ubuntu-24.04.
 
 ## Optional AI installation and hardware report
 

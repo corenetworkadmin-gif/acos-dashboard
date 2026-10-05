@@ -4,6 +4,11 @@ import { cpuProvider, planCompute } from "./resources.ts";
 import type { HardwareReport, ComputePlan } from "../runtime/hardware.ts";
 import { sandboxArgs } from "./sandbox.ts";
 export { sandboxArgs } from "./sandbox.ts";
+import {
+  selectIsolationAdapter,
+  type IsolationAdapter,
+  type IsolationHandle,
+} from "./isolation.ts";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
@@ -119,6 +124,10 @@ export class LocalEngine {
     return `${info.dev}:${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
   }
   active: ChildProcess | null = null;
+  // The confinement primitive. Selected once from the host platform; the engine
+  // never hard-codes bwrap/prlimit or Windows specifics.
+  readonly isolation: IsolationAdapter = selectIsolationAdapter();
+  private activeHandle: IsolationHandle | null = null;
   constructor(config: EngineConfig | null) {
     this.config = config;
   }
@@ -292,11 +301,15 @@ export class LocalEngine {
   cancel() {
     this.epoch++;
     if (this.active?.pid) {
-      try {
-        process.kill(-this.active.pid, "SIGKILL");
-      } catch {
-        this.active.kill("SIGKILL");
-      }
+      // The adapter owns the confinement primitive and knows how to reap it:
+      // process-group kill on Linux, Job Object teardown on Windows.
+      this.isolation.terminate(
+        this.activeHandle ?? {
+          platform: this.isolation.platform,
+          mechanism: this.isolation.mechanism,
+        },
+        this.active.pid,
+      );
     }
   }
   private execute(
@@ -307,53 +320,39 @@ export class LocalEngine {
   ): Promise<string> {
     if (this.active) throw new Error("Engine already has an active operation.");
     const config = this.config;
-    const mounts =
-      model && config
-        ? [
-            "--ro-bind",
-            path.dirname(config.binary),
-            "/engine",
-            "--ro-bind",
-            config.model,
-            "/model.gguf",
-            "--setenv",
-            "LD_LIBRARY_PATH",
-            "/engine",
-            "--chdir",
-            "/engine",
-          ]
-        : [];
     if (!config || !this.lastPlan)
       throw new Error("Resources have not been admitted.");
-    const limits = executionLimits(config, this.lastPlan.threads);
+    // The confinement primitive is chosen by the adapter, not here. On Linux this
+    // is prlimit + bwrap; on Windows it is the AppContainer/Job Object helper.
+    const wrapped = this.isolation.wrap({
+      command: [command, ...args],
+      readOnlyPaths:
+        model && config
+          ? [
+              { source: path.dirname(config.binary), target: "/engine" },
+              { source: config.model, target: "/model.gguf" },
+            ]
+          : [],
+      writablePaths: [],
+      env: model && config ? { LD_LIBRARY_PATH: "/engine" } : {},
+      workdir: model && config ? "/engine" : undefined,
+      limits: {
+        memoryBytes: config.memoryBytes,
+        addressSpaceBytes: config.addressSpaceBytes,
+        timeoutMs: config.timeoutMs,
+        threads: this.lastPlan.threads,
+        logicalThreads: this.hardware?.cpu.logicalThreads,
+      },
+    });
     this.reservation = this.lastPlan;
     return new Promise((resolve, reject) => {
-      const child = spawn(
-        "/usr/bin/prlimit",
-        [
-          "--as=" + limits.addressSpaceBytes,
-          "--cpu=" + limits.cpuSeconds,
-          "--stack=" + limits.stackBytes,
-          "--core=0",
-          "--nofile=128",
-          "--fsize=1048576",
-          "--",
-          "/usr/bin/bwrap",
-          ...sandboxArgs(),
-          ...mounts,
-          "--setenv",
-          "MALLOC_ARENA_MAX",
-          "2",
-          command,
-          ...args,
-        ],
-        {
-          detached: true,
-          env: { PATH: "/usr/bin:/bin" },
-          stdio: ["ignore", "pipe", "pipe"],
-        },
-      );
+      const child = spawn(wrapped.argv[0], wrapped.argv.slice(1), {
+        detached: true,
+        env: wrapped.env,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
       this.active = child;
+      this.activeHandle = wrapped.handle;
       let out = "",
         err = "",
         timedOut = false,
@@ -378,6 +377,7 @@ export class LocalEngine {
       child.on("error", (error) => {
         clearTimeout(timer);
         this.active = null;
+        this.activeHandle = null;
         this.reservation = null;
         reject(error);
       });

@@ -105,3 +105,65 @@ test("the generated launcher points at a real start script", () => {
 
 // Keep a reference so the import is used even if the file list changes.
 void mkdirSync;
+
+// --- macOS installer --------------------------------------------------------
+// The macOS installer refuses to run off Darwin, so its lifecycle cannot be
+// exercised end-to-end here. These tests verify the parts that are
+// platform-independent: usage, option handling, the fail-closed preflight, and
+// that the generated artifacts are wired to the real launcher.
+
+const macInstaller = path.join(repo, "src/macos/install-macos.sh");
+
+function runMac(args: string[]) {
+  return execFileSync("bash", [macInstaller, ...args], {
+    cwd: repo,
+    encoding: "utf8",
+  });
+}
+
+test("macOS installer prints usage and rejects unknown options", () => {
+  const help = runMac(["--help"]);
+  assert.match(help, /ACOS macOS installer/);
+  assert.match(help, /--login-item/);
+  assert.match(help, /--dry-run/);
+  assert.throws(
+    () =>
+      execFileSync("bash", [macInstaller, "--nonsense"], {
+        cwd: repo,
+        encoding: "utf8",
+        stdio: "pipe",
+      }),
+    /Unknown option/,
+  );
+});
+
+test("macOS installer fails closed off macOS rather than half-installing", () => {
+  // On Linux (this sandbox) the preflight must refuse with a clear message and a
+  // non-zero exit, before touching the filesystem.
+  assert.throws(
+    () =>
+      execFileSync("bash", [macInstaller], {
+        cwd: repo,
+        encoding: "utf8",
+        stdio: "pipe",
+      }),
+    /targets macOS/,
+  );
+});
+
+test("macOS installer wires the app bundle, CLI launcher and login item", () => {
+  const source = readFileSync(macInstaller, "utf8");
+  // App bundle with an Info.plist and a launcher that opens a Terminal.
+  assert.match(source, /ACOS\.app/);
+  assert.match(source, /Contents\/Info\.plist/);
+  assert.match(source, /Contents\/MacOS\/ACOS/);
+  // A per-user LaunchAgent with a stable label.
+  assert.match(source, /com\.acos\.host/);
+  assert.match(source, /Library\/LaunchAgents/);
+  assert.match(source, /launchctl bootstrap/);
+  // The bundle and launcher must reach the real start script.
+  assert.match(source, /src\/host\/start-local\.sh/);
+  // Uninstall parity.
+  assert.match(source, /--uninstall/);
+  assert.match(source, /--purge/);
+});

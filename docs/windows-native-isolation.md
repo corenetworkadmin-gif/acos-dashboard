@@ -1,21 +1,28 @@
-# Native Windows isolation adapter (design)
+# Native Windows isolation adapter
 
 ACOS separates **hardware discovery** from **AI engine support** and from
-**process isolation**. On Linux the isolation layer is Bubblewrap (`bwrap`) plus
-`prlimit`; on Windows 11 the current supported path runs the engine inside
-Ubuntu-24.04 on WSL2, which reuses the Linux adapter unchanged. This document
-specifies the design for a **native** Windows isolation adapter so the same
-guarantees can be provided without WSL2. It is a design, not an implemented
-adapter: it is not exercised in the Linux development sandbox and must be
-validated on real Windows 11 hardware before it is claimed as working.
+**process isolation**. The confinement primitive is chosen by a single
+`IsolationAdapter` (`src/host/isolation.ts`); the engine never hard-codes
+platform specifics. This document describes the Windows 11 adapter and how to
+verify it on real hardware.
 
-## What the isolation layer must guarantee
+> **Status (honest).** The adapter, the native helper source and the verification
+> harness are **implemented and unit-tested**. The TypeScript adapter's pure logic
+> (limit mapping, environment construction, job-spec JSON) is exercised by the
+> host test suite on Linux. The native helper (`acos-isolate.exe`) is **authored
+> but not compiled** in this Linux development sandbox, and OS enforcement has
+> **not** been observed on real Windows 11 hardware. Until `verify-windows.ps1`
+> passes on a target machine, treat native isolation as **unverified**. The
+> supported Windows path today remains WSL2, which reuses the Linux adapter
+> unchanged.
 
-The engine process is treated as untrusted. Whatever the platform, the adapter
-must provide the same contract the Linux adapter provides today:
+## What the isolation layer guarantees
 
-1. **No host filesystem access** beyond an explicit, read-only model directory
-   and a private writable scratch directory.
+The engine process is treated as untrusted. Every platform adapter provides the
+same contract:
+
+1. **No host filesystem access** beyond an explicit, read-only engine/model
+   directory and a private writable scratch directory.
 2. **No network access** of any kind (the reference engine is offline).
 3. **A cleared environment** so host secrets and credentials never reach the
    process.
@@ -26,65 +33,113 @@ must provide the same contract the Linux adapter provides today:
 6. **No privilege escalation**: the engine cannot gain rights the host did not
    grant, and cannot observe or manipulate the administrator UI.
 
-## Proposed Windows mechanisms
+## Mechanisms per platform
 
-| Requirement | Windows mechanism |
-| --- | --- |
-| Filesystem confinement | **AppContainer** SID with a capability-free profile; grant read access only to the model directory and full access only to a per-job scratch folder. |
-| Network denial | AppContainer without the `internetClient`/`privateNetworkClientServer` capabilities; additionally block via Windows Filtering Platform rules scoped to the job's AppContainer SID. |
-| Cleared environment | `CreateProcessAsUser` with an explicitly constructed environment block (no inheritance). |
-| Memory/CPU limits | **Job Object** with `JOB_OBJECT_LIMIT_PROCESS_MEMORY`, `JOB_OBJECT_LIMIT_JOB_MEMORY`, `JOB_OBJECT_LIMIT_ACTIVE_PROCESS = 1`, and CPU rate control via `JOBOBJECT_CPU_RATE_CONTROL_INFORMATION`. |
-| Wall-clock deadline | Host-side timer that terminates the job; mirrors the Linux `prlimit` deadline. |
-| Reliable termination | `TerminateJobObject` guarantees every descendant dies with the job, equivalent to a PID-namespace kill. |
-| Privilege containment | Restricted token (`CreateRestrictedToken`) with low integrity level, no `SeDebugPrivilege`, and UI isolation so the process cannot touch the administrator window station/desktop. |
+| Requirement | Linux (implemented, tested) | macOS (implemented, unit-tested) | Windows 11 (implemented, unverified) |
+| --- | --- | --- | --- |
+| Filesystem confinement | Bubblewrap `--ro-bind` engine/model, tmpfs scratch | Seatbelt `sandbox-exec` deny-default profile | AppContainer SID, capability-free; ACL grants read to model dir, write to scratch |
+| Network denial | `--unshare-net` | `(deny network*)` | AppContainer without `internetClient`/`privateNetworkClientServer`; WFP filter scoped to the AppContainer SID |
+| Cleared environment | `--clearenv` + explicit `--setenv` | explicit `env` (`PATH` only) | `CreateProcessAsUserW` with an explicitly built environment block |
+| Memory/CPU limits | `prlimit` `--as`/`--cpu`/`--stack` | `ulimit -t/-n/-f/-v` (address space best-effort) | Job Object `PROCESS_MEMORY`/`JOB_MEMORY`/`ACTIVE_PROCESS=1` + `JOBOBJECT_CPU_RATE_CONTROL_INFORMATION` |
+| Wall-clock deadline | host timer + `--cpu` | host timer + `ulimit -t` | host-side timer; helper calls `TerminateJobObject` |
+| Reliable termination | kill process group | kill process group | `TerminateJobObject` + `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` |
+| Privilege containment | `--cap-drop ALL`, `--unshare-user` | deny-default profile | restricted token (low integrity, no `SeDebugPrivilege`) |
 
-## Adapter interface
-
-The adapter is a thin, platform-specific implementation of the interface the
-engine already depends on. The engine asks the adapter to build the launch
-command and limits; it never hard-codes platform specifics.
+## Adapter interface (as implemented)
 
 ```ts
 interface IsolationAdapter {
-  // Platform this adapter serves.
-  readonly platform: "linux" | "win32";
-  // Whether the mechanism is available on this host right now.
-  probe(): { available: boolean; reason: string | null };
-  // Build the argv + environment that runs `command` under confinement.
+  readonly platform: "linux" | "win32" | "darwin";
+  readonly mechanism: string;
+  probe(): { available: boolean; reason: string | null; mechanism: string };
   wrap(input: {
     command: string[];
-    readOnlyPaths: string[];
+    readOnlyPaths: { source: string; target: string }[];
     writablePaths: string[];
-    limits: { memoryBytes: number; cpuSeconds: number; timeoutMs: number };
-  }): { argv: string[]; env: Record<string, string> };
-  // Terminate everything the adapter launched.
-  terminate(handle: unknown): void;
+    env: Record<string, string>;
+    workdir?: string;
+    limits: {
+      memoryBytes: number;
+      addressSpaceBytes?: number;
+      timeoutMs: number;
+      threads: number;
+      logicalThreads?: number;
+    };
+  }): { argv: string[]; env: Record<string, string>; handle: IsolationHandle };
+  terminate(handle: IsolationHandle, pid?: number): void;
 }
 ```
 
-The Linux adapter returns `bwrap` argv plus a `prlimit` wrapper. The Windows
-adapter creates a Job Object and an AppContainer token, then launches the engine
-with `CreateProcessAsUser`, returning a job handle that `terminate` closes with
-`TerminateJobObject`. Because both implement the same interface, **hardware
-discovery, resource admission and the operation pipeline are unchanged**: only
-the confinement primitive differs.
+The Linux adapter returns `prlimit … -- bwrap …` argv. The macOS adapter returns
+`bash -c 'ulimit …; exec "$@"' … /usr/bin/sandbox-exec -p <profile> …`. The
+Windows adapter returns `acos-isolate.exe --job-spec <json>`; the helper is the
+only component that touches Windows security APIs. Because all three implement
+the same interface, **hardware discovery, resource admission and the operation
+pipeline are unchanged** — only the confinement primitive differs.
+
+### The Windows job-spec contract
+
+`WindowsIsolationAdapter.wrap()` serialises a `WindowsJobSpec` (version 1) to the
+helper: `jobName`, `command`, `readOnlyPaths`, `writablePaths`, `workdir`, `env`,
+`limits` (mapped by `windowsJobLimits()`), `appContainer: "capability-free"`,
+`network: "deny"`, `integrity: "low"`. `windowsJobLimits()` is pure and
+unit-tested: it maps the platform-neutral budget to `processMemoryBytes`,
+`jobMemoryBytes`, a clamped `cpuRateHundredths` (1..10000), `activeProcessLimit
+= 1`, and `wallClockMs`.
+
+## Native helper (`src/windows/native/acos-isolate.cpp`)
+
+A single-file C++17 helper. It parses `--job-spec`, then:
+
+1. Creates a Job Object with `KILL_ON_JOB_CLOSE`, process/job memory caps, an
+   active-process limit of 1, and a hard CPU rate cap.
+2. Creates a capability-free AppContainer profile and grants ACLs for the
+   declared paths.
+3. Installs a WFP filter denying network for the AppContainer SID.
+4. Builds a restricted low-integrity token (`CreateRestrictedToken`,
+   `DISABLE_MAX_PRIVILEGE`).
+5. Launches the engine with `CreateProcessAsUserW`
+   (`CREATE_SUSPENDED | CREATE_NO_WINDOW | CREATE_UNICODE_ENVIRONMENT`), assigns
+   it to the job, resumes it, waits for the wall-clock deadline, then calls
+   `TerminateJobObject`.
+
+Build (on Windows, with the MSVC toolchain):
+
+```powershell
+cl /std:c++17 /EHsc /O2 acos-isolate.cpp `
+   /link Advapi32.lib Userenv.lib Kernel32.lib Fwpuclnt.lib Ws2_32.lib
+```
+
+`Install-ACOS.ps1 -Runtime native` builds this automatically when `cl.exe` is on
+PATH and installs the result to `%LOCALAPPDATA%\ACOS\acos-isolate.exe`. See
+`src/windows/native/README.md`.
+
+## Verification harness (`src/windows/verify-windows.ps1`)
+
+A six-point OS-enforcement harness. Run it after installing:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File src/windows/verify-windows.ps1 -Runtime native
+```
+
+It asserts, on the target machine:
+
+1. The engine cannot read `%USERPROFILE%`.
+2. The engine cannot open a socket.
+3. A memory allocation beyond the job limit fails without destabilizing the host.
+4. Killing the job reaps every descendant process.
+5. The engine cannot read the administrator key.
+6. The wall-clock deadline reclaims the job.
+
+Exit code is non-zero if any check fails. `-Runtime wsl2` runs the equivalent
+checks inside the Ubuntu-24.04 distribution.
 
 ## Why WSL2 remains the default today
 
-WSL2 already provides a complete, tested Linux isolation stack (namespaces,
-cgroups, Bubblewrap) with a mature engine toolchain. Shipping the native adapter
-means re-implementing and re-validating every guarantee above on real hardware,
-including AppContainer ACLs, WFP rules and Job Object accounting. Until that
-validation exists, ACOS documents WSL2 as the supported Windows path and treats
-the native adapter as future work. This is deliberate: the architecture requires
-demonstrated enforcement, not an asserted one.
-
-## Verification checklist for the native adapter (when implemented)
-
-- Engine cannot read `%USERPROFILE%`, `%APPDATA%`, or any path outside the model
-  and scratch directories.
-- Engine cannot open a socket (attempts fail immediately).
-- A memory allocation beyond the job limit fails without destabilizing the host.
-- Killing the job removes every descendant process.
-- The engine cannot read the administrator key or observe the admin window.
-- Cancellation, timeout, interlock and emergency isolation all reclaim the job.
+WSL2 already provides a complete, tested Linux isolation stack with a mature
+engine toolchain. The native adapter is implemented but its enforcement is
+unproven until `verify-windows.ps1` passes on real hardware — including
+AppContainer ACLs, WFP rules and Job Object accounting. Until that validation
+exists, ACOS documents WSL2 as the supported Windows path and treats native
+isolation as **available but unverified**. This is deliberate: the architecture
+requires demonstrated enforcement, not an asserted one.
