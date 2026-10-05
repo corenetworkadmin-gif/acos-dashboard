@@ -26,4 +26,5 @@ Rule: finish P1 → update GitHub → finish P3 → update GitHub. Leave credit 
 - [x] 16. Tests for providers + extensions; docs update
       (25 new tests: providers.test.ts, extensions.test.ts, governed-providers.test.ts; new
       docs/providers-and-authority.md; status/checklist/report/README corrected — 124/124 pass)
-- [ ] 17. Green baseline + commit + push + merge to main
+- [x] 17. Green baseline + commit + push + merge to main
+      (b70b289 pushed to acos/p3-providers-authority, fast-forward merged to main; GitHub updated)
