@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'coderabbit/**']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      real_model:
+        description: 'Download the pinned CPU model and run 1/8/15/32-worker stress tests'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+        with:
+          version: 10.34.5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.14.1
+          cache: pnpm
+      - name: Install Linux test prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap util-linux build-essential python3 apparmor-utils
+      - name: Permit Bubblewrap user namespaces on this ephemeral runner
+        shell: bash
+        run: |
+          # Ubuntu 24.04 may restrict unprivileged user namespaces through AppArmor.
+          # Scope the exception to bwrap; never disable the host-wide restriction.
+          if [[ -r /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]] && [[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" == 1 ]]; then
+            sudo tee /etc/apparmor.d/acos-ci-bwrap >/dev/null <<'PROFILE'
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile acos-ci-bwrap /usr/bin/bwrap flags=(unconfined) {
+            userns,
+          }
+          PROFILE
+            sudo apparmor_parser -r /etc/apparmor.d/acos-ci-bwrap
+          fi
+      - run: pnpm install --frozen-lockfile
+      - name: Check required namespace isolation
+        run: |
+          node --experimental-strip-types --input-type=module -e 'import {discoverHardware} from "./src/host/hardware.ts"; const h=discoverHardware(process.cwd()); if(!h.isolation.available) throw Error(h.isolation.reason); console.log("Isolation available");'
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm test:launch
+      - name: Validate setup shell syntax
+        run: |
+          for script in src/host/*.sh; do bash -n "$script"; done
+      - name: Install optional reference engine
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.real_model }}
+        run: pnpm setup:engine
+      - name: Run optional real-model stress matrix
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.real_model }}
+        run: pnpm test:engine

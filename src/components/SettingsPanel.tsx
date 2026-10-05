@@ -51,6 +51,61 @@ export default function SettingsPanel() {
           })}
         </div>
       </Widget>
+      <Widget
+        title="Protected storage"
+        description="Companion Home, conversation, and the audit journal are sealed at rest with a host key."
+      >
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-lg border p-4">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Algorithm
+            </p>
+            <p className="mt-1 font-mono text-sm">{state.storage.algorithm}</p>
+          </div>
+          <div className="rounded-lg border p-4">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Key fingerprint
+            </p>
+            <p className="mt-1 break-all font-mono text-sm">
+              {state.storage.keyFingerprint}
+            </p>
+          </div>
+          <div className="rounded-lg border p-4">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Integrity
+            </p>
+            <p
+              className={`mt-1 text-sm font-semibold ${state.storage.integrity === "VERIFIED" ? "text-primary" : "text-destructive"}`}
+            >
+              {state.storage.integrity}
+            </p>
+          </div>
+          <div className="rounded-lg border p-4">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Migration
+            </p>
+            <p className="mt-1 text-sm">
+              {state.storage.migratedFromPlaintext
+                ? "Sealed from plaintext"
+                : "Sealed from first write"}
+            </p>
+          </div>
+        </div>
+        <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
+          The key lives beside the database with owner-only permissions. If it is
+          lost, sealed data cannot be recovered; if it is tampered with, ACOS
+          refuses to start rather than serve unverified memory.
+        </p>
+        <div className="mt-4">
+          <ActionButton
+            variant="outline"
+            size="sm"
+            action={() => command("verifyStorage")}
+          >
+            Verify storage integrity
+          </ActionButton>
+        </div>
+      </Widget>
       <div className="grid gap-6 lg:grid-cols-2">
         <Widget
           title="Companion identity"

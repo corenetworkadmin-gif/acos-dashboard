@@ -10,7 +10,9 @@ import { login, refresh, useConnection } from "@/runtime/store";
 const descriptions: Record<string, string> = {
   "/": "Your companion’s world, at a glance.",
   "/companion": "A conversation that stays close to home.",
+  "/setup": "From a fresh install to your first conversation.",
   "/capabilities": "The boundary between what exists and what is permitted.",
+  "/scheduler": "Autonomy without authority: every run is still mediated.",
   "/engine": "Local intelligence, governed by your host.",
   "/operations": "A traceable path from request to result.",
   "/relocation": "A new home. The same companion. Your authority.",

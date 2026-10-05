@@ -1,3 +1,4 @@
+import { executionLimits } from "./limits.ts";
 import { discoverHardware } from "./hardware.ts";
 import { cpuProvider, planCompute } from "./resources.ts";
 import type { HardwareReport, ComputePlan } from "../runtime/hardware.ts";
@@ -16,9 +17,21 @@ export interface EngineConfig {
   context: number;
   maxTokens: number;
   memoryBytes: number;
+  addressSpaceBytes?: number;
   timeoutMs: number;
   maxThreads?: number;
   backend?: string;
+}
+// Length of the prefix of `text` that is safe to emit without risking a partial
+// trailing occurrence of `marker` (llama.cpp appends "[end of text]").
+export function markerSafeLength(
+  text: string,
+  marker = "[end of text]",
+): number {
+  let hold = Math.min(marker.length - 1, text.length);
+  while (hold > 0 && !marker.startsWith(text.slice(text.length - hold)))
+    hold--;
+  return text.length - hold;
 }
 export function engineConfig(): EngineConfig | null {
   const {
@@ -36,13 +49,20 @@ export function engineConfig(): EngineConfig | null {
     context: 4096,
     maxTokens: 256,
     // This budget belongs to the pinned model/adapter, never to the developer's host.
-    // Other models must provide their own measured budget before admission.
-    memoryBytes: process.env.ACOS_MODEL_MEMORY_MB
-      ? Number(process.env.ACOS_MODEL_MEMORY_MB) * 1024 ** 2
-      : sha256.toLowerCase() ===
-          "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db"
-        ? 2 * 1024 ** 3
-        : 0,
+    // Other models must provide their own measured working-RAM budget before admission.
+    memoryBytes:
+      (process.env.ACOS_MODEL_RAM_MB ?? process.env.ACOS_MODEL_MEMORY_MB)
+        ? Number(
+            process.env.ACOS_MODEL_RAM_MB ?? process.env.ACOS_MODEL_MEMORY_MB,
+          ) *
+          1024 ** 2
+        : sha256.toLowerCase() ===
+            "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db"
+          ? 2 * 1024 ** 3
+          : 0,
+    addressSpaceBytes: process.env.ACOS_ADDRESS_SPACE_MB
+      ? Number(process.env.ACOS_ADDRESS_SPACE_MB) * 1024 ** 2
+      : undefined,
     maxThreads: process.env.ACOS_MAX_CPU_THREADS
       ? Number(process.env.ACOS_MAX_CPU_THREADS)
       : undefined,
@@ -88,6 +108,7 @@ export class LocalEngine {
         memoryFraction: 0.75,
       },
     );
+    executionLimits(config, plan.threads);
     this.lastPlan = plan;
     return plan;
   }
@@ -141,7 +162,14 @@ export class LocalEngine {
     await this.execute("/bin/true", [], false);
     this.verified = true;
   }
-  async infer(prompt: string, maxTokens?: number) {
+  // Shared admission + validation for buffered and streaming inference. The stream
+  // callback, when present, receives raw stdout chunks as the model emits them; the
+  // same process limits, cancellation epoch and output cap apply to both paths.
+  private async runInference(
+    prompt: string,
+    maxTokens: number | undefined,
+    onChunk?: (text: string) => void,
+  ) {
     if (!this.verified || !this.config)
       throw new Error("Local engine is not verified.");
     const epoch = this.epoch;
@@ -170,6 +198,8 @@ export class LocalEngine {
       String(maxTokens ?? this.config.maxTokens),
       "-t",
       String(this.lastPlan?.threads ?? 1),
+      "-tb",
+      String(this.lastPlan?.threads ?? 1),
       "-ngl",
       "0",
       "--no-warmup",
@@ -183,10 +213,81 @@ export class LocalEngine {
       "/engine/" + path.basename(this.config.binary),
       args,
       true,
+      onChunk,
     );
-    const result = output.replace(/\[end of text\]/g, "").trim();
+    return output.replace(/\[end of text\]/g, "").trim();
+  }
+  async infer(prompt: string, maxTokens?: number) {
+    const result = await this.runInference(prompt, maxTokens);
     if (!result) throw new Error("Local model returned no output.");
     return result;
+  }
+  // Streaming inference: yields sanitized text deltas as the isolated process emits
+  // them. Cancellation, timeout and output caps are identical to buffered inference.
+  async *inferStream(
+    prompt: string,
+    maxTokens?: number,
+  ): AsyncGenerator<string, string, void> {
+    const MARKER = "[end of text]";
+    const queue: string[] = [];
+    let notify: (() => void) | null = null;
+    let finished = false;
+    let failure: Error | null = null;
+    let emitted = 0;
+    let buffered = "";
+    const wake = () => {
+      const fn = notify;
+      notify = null;
+      fn?.();
+    };
+    const push = (text: string) => {
+      if (text.length > emitted) {
+        queue.push(text);
+        wake();
+      }
+    };
+    const pending = this.runInference(prompt, maxTokens, (chunk) => {
+      buffered += chunk;
+      const cleaned = buffered.replace(/\[end of text\]/g, "");
+      // Hold back a possible partial trailing marker so a split "[end of text]"
+      // is never emitted to the client.
+      push(cleaned.slice(0, markerSafeLength(cleaned, MARKER)));
+    })
+      .then((value) => {
+        buffered = value;
+      })
+      .catch((error: unknown) => {
+        failure = error instanceof Error ? error : new Error("Inference failed");
+      })
+      .finally(() => {
+        finished = true;
+        wake();
+      });
+    while (true) {
+      if (queue.length) {
+        const snapshot = queue.shift()!;
+        if (snapshot.length > emitted) {
+          const delta = snapshot.slice(emitted);
+          emitted = snapshot.length;
+          yield delta;
+        }
+        continue;
+      }
+      if (finished) break;
+      await new Promise<void>((resolve) => {
+        notify = resolve;
+      });
+    }
+    await pending;
+    if (failure) throw failure;
+    const finalText = buffered.replace(/\[end of text\]/g, "");
+    if (finalText.length > emitted) {
+      const delta = finalText.slice(emitted);
+      emitted = finalText.length;
+      yield delta;
+    }
+    if (!finalText) throw new Error("Local model returned no output.");
+    return finalText;
   }
   cancel() {
     this.epoch++;
@@ -202,6 +303,7 @@ export class LocalEngine {
     command: string,
     args: string[],
     model: boolean,
+    onChunk?: (text: string) => void,
   ): Promise<string> {
     if (this.active) throw new Error("Engine already has an active operation.");
     const config = this.config;
@@ -221,13 +323,17 @@ export class LocalEngine {
             "/engine",
           ]
         : [];
+    if (!config || !this.lastPlan)
+      throw new Error("Resources have not been admitted.");
+    const limits = executionLimits(config, this.lastPlan.threads);
     this.reservation = this.lastPlan;
     return new Promise((resolve, reject) => {
       const child = spawn(
         "/usr/bin/prlimit",
         [
-          "--as=" + (this.reservation?.memoryBytes ?? config?.memoryBytes ?? 0),
-          "--cpu=120",
+          "--as=" + limits.addressSpaceBytes,
+          "--cpu=" + limits.cpuSeconds,
+          "--stack=" + limits.stackBytes,
           "--core=0",
           "--nofile=128",
           "--fsize=1048576",
@@ -235,9 +341,9 @@ export class LocalEngine {
           "/usr/bin/bwrap",
           ...sandboxArgs(),
           ...mounts,
-          "/usr/bin/prlimit",
-          "--nproc=64",
-          "--",
+          "--setenv",
+          "MALLOC_ARENA_MAX",
+          "2",
           command,
           ...args,
         ],
@@ -257,7 +363,10 @@ export class LocalEngine {
         this.cancel();
       }, config?.timeoutMs ?? 120_000);
       child.stdout?.on("data", (data) => {
-        out += data.toString();
+        const text = data.toString();
+        out += text;
+        // Streaming consumers receive raw deltas; the cap still bounds total output.
+        if (onChunk && !overflow) onChunk(text);
         if (out.length > 65536) {
           overflow = true;
           this.cancel();
@@ -283,7 +392,14 @@ export class LocalEngine {
             ),
           );
         else if (overflow) reject(new Error("Engine output limit exceeded."));
-        else if (signal) reject(new Error("Inference cancelled."));
+        else if (signal)
+          reject(
+            new Error(
+              signal === "SIGXCPU"
+                ? "Engine exceeded its aggregate CPU-time budget."
+                : "Inference cancelled or terminated by a host resource limit.",
+            ),
+          );
         else if (code !== 0)
           reject(
             new Error(`Isolated engine failed (${code}): ${err.slice(-800)}`),

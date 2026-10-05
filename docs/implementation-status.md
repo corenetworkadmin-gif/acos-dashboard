@@ -1,35 +1,62 @@
 # Architecture implementation status
 
 Reference: supplied ACOS proposal, revision v0.8, sections 1–89.
+Reviewed against the proposal and re-verified in this sandbox on 2026-10-05.
+
+This document is the honest inventory of what works, what is partial, and what remains.
+It does not claim "complete", "production-ready" or "secure". See
+[completion checklist](completion-checklist.md) for the per-section matrix and
+[final report](FINAL-REPORT.md) for the narrative.
+
+## Baseline (this sandbox)
+
+- `pnpm typecheck` clean · `pnpm test` **87/87 pass** · `pnpm test:launch` **2/2 pass** ·
+  `pnpm lint` 0 errors (6 pre-existing Fast Refresh warnings) · `pnpm build` succeeds.
 
 ## Implemented in this repository
 
-| Area                          | Working implementation                                                                                                                         | Limit                                                                                            |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Companion / engine separation | One current identity, persistent personality/memories, conversation archive, replaceable configured engine                                     | Single host daemon; no bootable OS image                                                         |
-| Operations                    | Explicit ID, identity, target, policy version, deterministic admission/execution/terminal states                                               | Three executable capability contracts                                                            |
-| Policy                        | Fail-closed allowlist, target/action matching, Safe/Intermediate/Advanced ceilings                                                             | Network/device/remote providers remain unavailable                                               |
-| Resources                     | Dynamic host discovery, model resource admission, exclusive inference slot, process limits and cleanup                                                              | CPU execution only; partial accelerator inventory; logical reservations, not guaranteed physical RAM                          |
-| Administrator                 | Independent host key, expiring HttpOnly session, interlock drain/cancel, emergency process termination                                         | Trusted host administrator; no hardware keystore, MFA, or remote deployment hardening            |
-| Persistence / audit           | SQLite atomic state and hash-linked append journal, private permissions, startup corruption checks and interrupted-operation reconciliation    | No encrypted disk, external signature anchoring, or automated backup UI                          |
-| Local AI                      | Verified GGUF, llama.cpp CPU inference, actual model/tokenizer health check, ChatML context, offline namespace, cancellation                   | Qwen/ChatML reference adapter; no streaming, GPU/NPU, generalized tokenizer or tool-call adapter |
-| Home                          | Governed read/write, durable notes, retained messages independent of engine                                                                    | Bounded note count/length; retrieval selects recent authorized notes                             |
-| Relocation                    | JSON schema + SHA-256, explicit trust/replacement, dependency checks, capability reconciliation, atomic replacement, honest partial continuity | No signed source identity, source deactivation, encrypted transfer, or model/extension transfer  |
-| Dashboard                     | Auth, responsive navigation, overview, chat, capabilities, engine controls, operation detail/filter/export, import, modes, pause/isolation     | Requires the host daemon; static hosting alone cannot provide runtime functionality              |
+| Area | Working implementation | Limit |
+| --- | --- | --- |
+| Companion / engine separation | One identity, persistent personality/memories, conversation archive, replaceable engine | Single host daemon; no bootable OS image |
+| Operations | Explicit ID, identity, target, policy version, deterministic admission/execution/terminal states | Providers for network/device/remote remain unavailable |
+| Policy | Fail-closed allowlist, target/action matching, Safe/Intermediate/Advanced ceilings | — |
+| Resources | Dynamic host discovery, model admission, exclusive inference slot, process limits, cleanup, CPU-time accounting, address-space budget | CPU execution only; logical reservations, not guaranteed physical RAM on every platform |
+| Administrator | Independent host key, expiring HttpOnly session, interlock drain/cancel, emergency termination | Trusted host admin; no hardware keystore, MFA, or remote-deployment hardening |
+| Persistence / audit | SQLite atomic state, hash-linked append journal, private permissions, startup corruption checks, interrupted-operation reconciliation | No external signature anchoring or automated backup UI |
+| **Encrypted storage** | AES-256-GCM at rest for Home/messages/audit with host key `storage.key` (0600), plaintext migration, integrity verification (`verifyStorage`) | Key is file-based, not hardware-backed |
+| Local AI | Verified GGUF, llama.cpp CPU inference, real model/tokenizer health check, ChatML context, offline namespace, cancellation | Qwen/ChatML reference adapter; one concrete tokenizer |
+| **Streaming inference** | Token-by-token stdout iterator through the same admission/authorization/audit pipeline; SSE endpoint; UI token streaming; mid-stream cancellation | CPU path only |
+| **Tool-call mediation** | Declared tools, structured `<tool_call>` JSON parser, routed through the same operation pipeline; model text never executed; unknown/denied tools fail closed | Tool set is the declared reference set |
+| **Guided onboarding** | First-run detection + step flow (hardware → engine → companion → first chat); `/setup` route; first-run banner | — |
+| **Scheduler / event bus** | Durable scheduled + event-triggered tasks through the authority pipeline; idempotency keys; recovery-journal reconciliation | — |
+| Home | Governed read/write, durable notes, messages retained independent of engine | Bounded note count/length |
+| Relocation | JSON schema + SHA-256, explicit trust/replacement, dependency checks, capability reconciliation, atomic replacement, honest partial continuity | No signed source identity, source deactivation, or encrypted transfer |
+| Dashboard | Auth, responsive navigation, overview, chat, capabilities, engine controls, operation detail/filter/export, import, modes, pause/isolation, scheduler, protected-storage card | Requires the host daemon |
+| **Adversarial tests** | 20 attack-oriented tests across financial isolation, anti-propagation, approval replay, recovery abuse, administrator interlock, resource reconciliation, credential isolation | Synthetic; not a third-party assessment |
+| **Linux packaging** | Per-user installer + `.desktop` entry + icon; `--prefix/--build/--uninstall/--purge`; idempotent upgrade; refuses root | Linux only |
+| **Windows packaging** | `Install-ACOS.ps1` (Win11 check, WSL2 + Ubuntu-24.04, clone, shortcuts, launcher) + `Uninstall-ACOS.ps1` | Authored for Windows; **unverified in this sandbox** |
 
 ## Still required for the full proposed ACOS operating system
 
-1. Bootable standalone distribution, service supervision, host installation exclusivity, secure boot/update integration, dedicated OS users and device mediation.
-2. Reviewed threat model and independent security assessment, seccomp/cgroup hardening, encrypted companion storage, hardware-backed administrative identity, signed audit anchoring.
-3. Scheduler/event bus, event-triggered autonomous tasks, broader resource reconciliation, protected credential service.
-4. Signed provider/extension registry, WASI or equivalent extension isolation, capability-specific device/network implementations and constrained remote execution.
-5. Authenticated source-to-destination migration with source retirement, identity proofs, anti-replication enforcement, transactional snapshot/restore/update orchestration.
-6. Generalized local model installation/compatibility registry, streaming inference, structured tool-call mediation, accelerator scheduling, model replacement compatibility reports.
-7. Adversarial test suite (spec Phase 7, section 60): propagation, covert-channel, credential-isolation, financial-isolation, administrator-interlock, recovery-abuse, authorization-replay, and resource-reconciliation testing. The current tests cover policy denials, persistence, interlock/cancellation, relocation, restart reconciliation, audit corruption, HTTP authorization/CSRF, and real Linux isolation, but not the full adversarial class.
-8. Financial isolation test class (spec section 59): dedicated tests attempting banking-credential discovery, browser-session inspection, transaction initiation, and the other prohibited paths. The boundary is enforced architecturally — no financial capability exists and relocation rejects financial/propagation declarations — but the dedicated test class is not yet written.
+1. Bootable standalone distribution, service supervision, host-installation exclusivity, secure
+   boot/update integration, dedicated OS users, device mediation. *(Deferred by the desktop-app
+   roadmap; needs an owner scope decision.)*
+2. Reviewed threat model and independent security assessment; seccomp/cgroup hardening;
+   hardware-backed administrative identity; signed audit anchoring.
+3. Native Windows runtime authority/isolation adapter (AppContainer + Job Objects + WFP) — currently
+   a written design only (`docs/windows-native-isolation.md`); the shipped Windows path is a
+   managed WSL2 guest runtime.
+4. Signed provider/extension registry and WASI-or-equivalent extension isolation; capability-
+   specific device/network implementations and constrained remote execution.
+5. Authenticated source-to-destination migration with source retirement, identity proofs,
+   anti-replication enforcement, transactional snapshot/restore/update orchestration.
+6. GPU/NPU accelerator backends (CUDA/Metal/Vulkan/ROCm) with per-backend isolation and CPU
+   fallback. Discovery and compatibility logic exist; execution is CPU-only.
+7. Generalized tokenizer/model-compatibility registry beyond the ChatML reference adapter.
+8. Signed release artifacts, checksums and update trust; published CI run and merged commit.
 
-Unavailable providers fail closed. The interface does not represent these remaining subsystems as operational. Financial and propagation authority are not configurable capabilities.
-
-Reviewed against the supplied v0.8 proposal (sections 1–89) on 2026-10-04. The implementation is published on `main`; the earlier task-branch setup instructions in `docs/windows.md` have been updated to match.
+Unavailable providers fail closed. The interface does not represent these remaining subsystems as
+operational. Financial and propagation authority are not configurable capabilities.
 
 Hardware contract and platform limits: [hardware discovery](hardware.md).
+Open hand-off list: [remaining work](REMAINING-WORK.md).

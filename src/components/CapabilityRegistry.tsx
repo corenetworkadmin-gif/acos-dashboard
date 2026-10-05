@@ -1,13 +1,20 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Search, ShieldCheck } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { command, useRuntime } from "@/runtime/store";
+import { command, useConnection, useRuntime } from "@/runtime/store";
 import { Widget } from "./Widget";
 import StatusBadge from "./StatusBadge";
 export default function CapabilityRegistry() {
   const state = useRuntime();
+  const { connected } = useConnection();
+  const saving = useRef(false);
+  const [feedback, setFeedback] = useState<{
+    id: string;
+    message: string;
+    error: boolean;
+  } | null>(null);
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const caps = state.capabilities.filter((c) =>
@@ -17,7 +24,7 @@ export default function CapabilityRegistry() {
     <div className="space-y-6">
       <Widget
         title="Capability registry"
-        description="Registration is not authorization. Configure only the authority your companion needs."
+        description="A policy switch grants permission only. It cannot attach a provider. Close administrator controls before running companion operations."
         action={
           <StatusBadge>{state.capabilities.length} registered</StatusBadge>
         }
@@ -36,7 +43,8 @@ export default function CapabilityRegistry() {
           {caps.map((cap) => (
             <div
               key={cap.id}
-              className="grid gap-4 border-t py-5 md:grid-cols-[1fr_140px_110px]"
+              className="grid gap-4 border-t py-5 lg:grid-cols-[1fr_220px]"
+              data-capability={cap.id}
             >
               <div>
                 <div className="flex items-center gap-2">
@@ -52,32 +60,104 @@ export default function CapabilityRegistry() {
                   {cap.provider} · Target: {cap.target}
                 </p>
               </div>
-              <div className="flex items-center">
-                <StatusBadge tone={cap.available ? "good" : "neutral"}>
-                  {cap.available ? "Provider available" : "Not attached"}
-                </StatusBadge>
-              </div>
-              <div className="flex items-center justify-end gap-3">
-                <span className="text-xs text-muted-foreground">
-                  {cap.enabled ? "Enabled" : "Disabled"}
+              <div className="flex flex-col gap-3 lg:items-end">
+                <span className="text-xs font-medium">
+                  Policy: {cap.enabled ? "Enabled" : "Disabled"}
                 </span>
-                <Switch
-                  aria-label={`Enable ${cap.name}`}
-                  checked={cap.enabled}
-                  disabled={
-                    !cap.configurable || !cap.available || busy === cap.id
-                  }
-                  onCheckedChange={async (enabled) => {
-                    setBusy(cap.id);
-                    try {
-                      await command("capability", { id: cap.id, enabled });
-                    } catch (e) {
-                      toast.error((e as Error).message);
-                    } finally {
-                      setBusy(null);
+                {cap.configurable ? (
+                  <Switch
+                    aria-label={`Enable ${cap.name}`}
+                    aria-describedby={`capability-${cap.id}-status`}
+                    checked={cap.enabled}
+                    disabled={
+                      !connected ||
+                      !state.adminOpen ||
+                      !cap.attached ||
+                      (!cap.available && !cap.enabled) ||
+                      busy !== null
                     }
-                  }}
-                />
+                    onCheckedChange={async (enabled) => {
+                      if (saving.current) return;
+                      saving.current = true;
+                      setBusy(cap.id);
+                      setFeedback(null);
+                      try {
+                        await command("capability", { id: cap.id, enabled });
+                        setFeedback({
+                          id: cap.id,
+                          message: `Policy ${enabled ? "enabled" : "disabled"} and saved on the host.`,
+                          error: false,
+                        });
+                      } catch (e) {
+                        const message =
+                          e instanceof Error
+                            ? e.message
+                            : "Policy could not be saved.";
+                        setFeedback({ id: cap.id, message, error: true });
+                        toast.error(message);
+                      } finally {
+                        saving.current = false;
+                        setBusy(null);
+                      }
+                    }}
+                  />
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    Fixed host policy
+                  </span>
+                )}
+                {busy === cap.id && (
+                  <span role="status" className="text-xs">
+                    Saving policy…
+                  </span>
+                )}
+              </div>
+              <div
+                id={`capability-${cap.id}-status`}
+                className="space-y-2 text-xs lg:col-span-2"
+              >
+                <div className="flex flex-wrap gap-2">
+                  <StatusBadge tone={cap.attached ? "good" : "neutral"}>
+                    Attachment: {cap.attached ? "Attached" : "Not attached"}
+                  </StatusBadge>
+                  <StatusBadge tone={cap.available ? "good" : "warning"}>
+                    Availability: {cap.available ? "Available" : "Unavailable"}
+                  </StatusBadge>
+                  <StatusBadge
+                    tone={cap.authorization.allowed ? "good" : "neutral"}
+                  >
+                    Authorization:{" "}
+                    {cap.authorization.allowed
+                      ? "Eligible for operation checks"
+                      : "Blocked"}
+                  </StatusBadge>
+                </div>
+                {cap.availabilityReason && (
+                  <p className="text-muted-foreground">
+                    {cap.availabilityReason}
+                  </p>
+                )}
+                {cap.authorization.reason && (
+                  <p className="text-muted-foreground">
+                    {cap.authorization.reason}. Enabling policy does not bypass
+                    this restriction.
+                  </p>
+                )}
+                {!connected && (
+                  <p className="text-amber-700">
+                    Host disconnected. Reconnect to change policy.
+                  </p>
+                )}
+                {feedback?.id === cap.id && (
+                  <p
+                    role={feedback.error ? "alert" : "status"}
+                    className={
+                      feedback.error ? "text-red-700" : "text-emerald-700"
+                    }
+                  >
+                    {feedback.message}
+                  </p>
+                )}
               </div>
             </div>
           ))}
