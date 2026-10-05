@@ -47,6 +47,18 @@ import {
   nextIntervalRun,
   reconcileJournal,
 } from "./scheduler.ts";
+import {
+  ProviderRegistry,
+  defaultProviders,
+  type ProviderContext,
+  type ProviderResult,
+} from "./providers.ts";
+import {
+  ExtensionRegistry,
+  detectEscalation,
+  type ExtensionInstallReport,
+  type InstalledExtension,
+} from "./extensions.ts";
 import type {
   EventRecord,
   IdempotencyRecord,
@@ -66,6 +78,10 @@ export interface RunOptions {
 // Capabilities whose completion mutates durable companion state and therefore
 // write recovery-journal markers around their side effects.
 const durableCapabilities = new Set(["home.write", "chat.send"]);
+
+// Bounded wall-clock budget for a provider-backed request (network, device,
+// remote). Providers may apply a tighter cap of their own.
+const PROVIDER_TIMEOUT_MS = 30_000;
 
 // Events emitted by tool-mediated chat. The UI renders tokens, tool requests and
 // their mediated results; denials are surfaced honestly rather than hidden.
@@ -113,8 +129,20 @@ export class HostRuntime {
   private storageKey!: Buffer;
   private storageMigrated = false;
   private storageIntegrity: "VERIFIED" | "FAILED" = "VERIFIED";
+  // Governed capability providers and the extension registry. Both are injected
+  // so tests can supply device/remote bridges; production uses the defaults,
+  // which leave device and remote providers unavailable until a component exists.
+  private providers: ProviderRegistry;
+  private extensions = new ExtensionRegistry();
+  // Aborts an in-flight provider request on cancellation.
+  private providerAbort: AbortController | null = null;
   engine: LocalEngine;
-  constructor(directory: string, engine: LocalEngine) {
+  constructor(
+    directory: string,
+    engine: LocalEngine,
+    options: { providers?: ProviderRegistry } = {},
+  ) {
+    this.providers = options.providers ?? new ProviderRegistry(defaultProviders());
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     chmodSync(directory, 0o700);
     // Host storage key (architecture 17). Generated once, stored 0600, separate
@@ -277,6 +305,27 @@ export class HostRuntime {
   }
   private currentCapabilities() {
     return this.state.capabilities.map((cap) => {
+      // Provider-backed capabilities derive their authority from the registry,
+      // never from stored or restored data. Attached/available are host facts;
+      // enabled is a separate administrator policy grant.
+      const provider = this.providers.get(cap.id);
+      if (provider) {
+        const probe = provider.probe();
+        const attached = provider.attached();
+        const available = attached && probe.available;
+        return {
+          ...cap,
+          provider: provider.name,
+          attached,
+          available,
+          target: provider.target(),
+          availabilityReason: !attached
+            ? "No governed provider is attached."
+            : available
+              ? null
+              : probe.reason,
+        };
+      }
       const available =
         cap.attached &&
         cap.available &&
@@ -346,6 +395,15 @@ export class HostRuntime {
         migratedFromPlaintext: this.storageMigrated,
         integrity: this.storageIntegrity,
       },
+      providers: this.providers.summaries(),
+      extensions: this.extensions.list().map((extension) => ({
+        id: extension.id,
+        name: extension.name,
+        version: extension.version,
+        requests: extension.requests,
+        tools: extension.tools,
+        installedAt: extension.installedAt,
+      })),
       host: {
         connected: true,
         platform: process.platform,
@@ -808,7 +866,10 @@ export class HostRuntime {
     if (!cap) throw new Error("Unknown capability; policy was not changed.");
     if (!cap.configurable)
       throw new Error("This capability has a fixed host policy.");
-    if (enabled && (!cap.attached || !cap.available))
+    // Availability is a host fact derived from the provider registry, not from
+    // stored state: enabling requires an attached, available provider.
+    const derived = this.currentCapabilities().find((c) => c.id === id)!;
+    if (enabled && (!derived.attached || !derived.available))
       throw new Error(
         "Provider is unavailable or not attached. Attach a governed provider before enabling this capability.",
       );
@@ -828,6 +889,74 @@ export class HostRuntime {
       this.state.policyVersion = previous.version;
       throw error;
     }
+  }
+  // Attach a governed provider. Administrator-only and idle-only. Attaching is a
+  // host-fact change (the provider becomes present); it grants no policy authority
+  // by itself — the capability still has to be enabled separately.
+  attachProvider(capability: string, config: unknown) {
+    this.requireAdmin();
+    this.requireIdle();
+    if (!this.providers.get(capability))
+      throw new Error("Unknown provider; nothing was attached.");
+    this.providers.attach(capability, config);
+    this.save(
+      `Provider for ${capability} attached by administrator (target: ${this.providers.target(capability)}). No capability was enabled.`,
+    );
+  }
+  detachProvider(capability: string) {
+    this.requireAdmin();
+    this.requireIdle();
+    if (!this.providers.get(capability))
+      throw new Error("Unknown provider; nothing was detached.");
+    // Detaching revokes the host fact and any policy grant that depended on it.
+    const cap = this.state.capabilities.find((c) => c.id === capability);
+    const wasEnabled = cap?.enabled ?? false;
+    this.providers.detach(capability);
+    if (cap && wasEnabled) {
+      cap.enabled = false;
+      this.state.policyVersion++;
+    }
+    this.save(
+      `Provider for ${capability} detached by administrator.${wasEnabled ? " Dependent capability disabled." : ""}`,
+    );
+  }
+  probeProviders() {
+    return this.providers.summaries();
+  }
+  // Install an extension manifest. Administrator-only. Installation is inert:
+  // it records the manifest and reports that no authority was granted. The
+  // returned report is audited, and any escalation is a fatal integrity error.
+  installExtension(manifest: unknown): ExtensionInstallReport {
+    this.requireAdmin();
+    const before = this.state.capabilities.map((cap) => ({
+      id: cap.id,
+      enabled: cap.enabled,
+      attached: this.providers.isAttached(cap.id),
+    }));
+    const report = this.extensions.install(manifest, before);
+    const after = this.state.capabilities.map((cap) => ({
+      id: cap.id,
+      enabled: cap.enabled,
+      attached: this.providers.isAttached(cap.id),
+    }));
+    const escalations = detectEscalation(before, after);
+    if (escalations.length)
+      throw new Error(
+        `Extension install attempted to escalate authority: ${escalations.join("; ")}`,
+      );
+    this.save(
+      `Extension "${report.id}" v${report.version} installed by administrator. Grants: none. Requests: ${report.requests.map((r) => r.capability).join(", ") || "none"}.`,
+    );
+    return report;
+  }
+  removeExtension(id: string): boolean {
+    this.requireAdmin();
+    const removed = this.extensions.remove(id);
+    if (removed) this.save(`Extension "${id}" removed by administrator.`);
+    return removed;
+  }
+  listExtensions(): InstalledExtension[] {
+    return this.extensions.list();
   }
   rename(name: string) {
     this.requireAdmin();
@@ -909,6 +1038,7 @@ export class HostRuntime {
     this.cancelled = true;
     this.loadCancelled = true;
     this.engine.cancel();
+    this.providerAbort?.abort();
     await Promise.allSettled([this.pending, this.loadJob]);
   }
   // Shared admission/authorization pipeline. Both buffered and streaming execution
@@ -951,18 +1081,35 @@ export class HostRuntime {
       "chat.send": "send",
       "home.read": "read",
       "home.write": "write",
+      "network.request": "request",
+      "device.microphone": "capture",
+      "device.camera": "capture",
+      "remote.execute": "execute",
     };
+    // Provider-backed capabilities have a dynamic target validated by the
+    // provider's own allowlist; fixed capabilities must match their contract.
+    const providerBacked = this.providers.get(capability) !== undefined;
     let reason = this.stopping
       ? "Host is stopping"
       : cap
         ? capabilityReason(this.state, cap)
         : "Unknown capability; authorization failed closed";
-    if (!reason && (actions[capability] !== action || target !== cap?.target))
+    if (!reason && providerBacked) {
+      reason =
+        actions[capability] !== action
+          ? "Action does not match the capability contract"
+          : this.providers.authorizeTarget(capability, target);
+    } else if (!reason && (actions[capability] !== action || target !== cap?.target)) {
       reason = "Action or target does not match the capability contract";
+    }
     if (!reason && capability === "chat.send" && this.state.engine !== "READY")
       reason = "Local engine is not ready. Verify and load a model first.";
-    if (!reason && capability !== "home.read" && !input.trim())
-      reason = "Input is empty";
+    // Device captures carry no textual input; everything else requires input.
+    const inputOptional =
+      capability === "home.read" ||
+      capability === "device.microphone" ||
+      capability === "device.camera";
+    if (!reason && !inputOptional && !input.trim()) reason = "Input is empty";
     if (
       !reason &&
       capability === "home.write" &&
@@ -1017,7 +1164,7 @@ export class HostRuntime {
     input: string,
     nested: boolean,
     options: RunOptions = {},
-  ): Promise<Operation | string[]> {
+  ): Promise<Operation | string[] | ProviderResult> {
     // Idempotency (architecture 37): a retry that reuses a key must not execute a
     // second time. A recorded key returns the original result; an in-flight or
     // recovery-pending key fails closed.
@@ -1060,6 +1207,37 @@ export class HostRuntime {
             "UPDATE_STARTED",
             `Durable ${capability} began; side effect pending commit.`,
           );
+        // Provider-backed capabilities execute through the attached provider, not
+        // the local engine. Authorization (capability + provider target allowlist)
+        // already happened in beginOperation; the provider adds no authority.
+        const provider = this.providers.get(capability);
+        if (provider) {
+          const controller = new AbortController();
+          this.providerAbort = controller;
+          let result: ProviderResult;
+          try {
+            result = await this.providers.execute(capability, {
+              input,
+              target,
+              timeoutMs: PROVIDER_TIMEOUT_MS,
+              signal: controller.signal,
+            });
+          } finally {
+            this.providerAbort = null;
+          }
+          if (this.cancelled || this.state.adminOpen || this.state.emergency)
+            throw new Error("Provider request cancelled.");
+          transition(
+            "COMPLETING",
+            `Provider result recorded (${result.output.length} chars); reservation released.`,
+          );
+          transition(
+            "COMPLETED",
+            `Operation completed via ${cap.name}. ${JSON.stringify(result.detail ?? {}).slice(0, 200)}`,
+          );
+          this.settleIdempotency(idempotencyKey, op.id, "COMPLETED");
+          return result;
+        }
         if (capability === "home.write")
           this.state.companion.memories.push(input.trim());
         if (capability === "chat.send") {
@@ -1175,10 +1353,17 @@ export class HostRuntime {
       this.recordDenied(tool.capability, tool.action, tool.target, reason);
       throw new Error(reason);
     }
+    // Provider-backed tools resolve their target dynamically: from a declared
+    // target parameter (e.g. the URL) or from the provider's attached target.
+    const target = tool.targetParameter
+      ? String(args[tool.targetParameter] ?? "").trim()
+      : this.providers.get(tool.capability)
+        ? this.providers.target(tool.capability)
+        : tool.target;
     return this.performOperation(
       tool.capability,
       tool.action,
-      tool.target,
+      target,
       input,
       true,
     );

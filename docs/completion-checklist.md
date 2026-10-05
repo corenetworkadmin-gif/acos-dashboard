@@ -34,16 +34,16 @@ observed tests exist. Nothing here is a claim of "complete", "production-ready" 
 | Integrate packaged source with current GitHub work, preserving user changes | **Verified** | Delivered via PR #2, squash-merged to `main` (commit `302002d`). Upstream `main` history preserved (branch rebased onto `894677d`). |
 | Resolve standalone-OS vs desktop-app scope conflict with the owner | **Blocked** | Needs an explicit owner decision. The delivered program implements the **desktop-app** scope; OS-only items are listed as Deferred. |
 | Working Windows 11 installer + desktop lifecycle, guided first run, no manual developer setup | **Implemented (unverified-here)** | `src/windows/Install-ACOS.ps1` (Win11 build check, WSL2 + Ubuntu-24.04, repo clone, shortcuts, `Start-ACOS.cmd`), `Uninstall-ACOS.ps1`. Authored for Windows; cannot be executed in a Linux sandbox. |
-| Verify native Windows runtime authority/isolation, or owner-approved managed guest runtime | **Blocked / Partial** | Native isolation adapter is **Design-only** (`docs/windows-native-isolation.md`). The shipped path is a managed WSL2 guest runtime; owner agreement required. |
+| Verify native Windows runtime authority/isolation, or owner-approved managed guest runtime | **Blocked / Partial** | Native isolation adapter + helper source + six-point verifier are **implemented and unit-tested** (`isolation.ts`, `isolation.test.ts`, `docs/windows-native-isolation.md`); the native helper is authored-not-compiled here and unverified on real Windows 11 hardware. The shipped path is a managed WSL2 guest runtime; owner agreement required. |
 | Verify install, launch, model setup, offline streaming chat, durable Home, cancellation, restart, upgrade/rollback, uninstall/data handling | **Partial** | Linux: installer + launch + upgrade + uninstall/data verified by `packaging.test.ts` (5 tests) and `launch.integration.ts` (2). Streaming/cancel/Home/restart verified by `runtime.test.ts`. Windows/macOS unverified-here. |
 | Hardware discovery + compatible engine/model/resource selection; test CPU-only, accelerators, memory pressure, architectures | **Partial** | `hardware.ts` + `hardware.test.ts` (6) cover synthetic CPU-only/ARM64/multi-accelerator/unknown telemetry/cgroup/provider policy. Real accelerator execution is **not** implemented (CPU-only). |
 | Reserve + enforce per-job resources; reconcile after cancellation/crash | **Partial** | `resources.ts`, `limits.ts`, `engine.test.ts`, `limits.test.ts` cover reservation, CPU-time accounting, address-space budget, 32-worker stress, release. Physical-RAM/process/thread hard containment is best-effort, not OS-guaranteed on all platforms. |
-| Required providers + generalized tool calls with operation-bound authorization, target restrictions, final revalidation | **Partial** | Tool-call mediation is **Verified** (`tools.ts`, `tools.test.ts`, adversarial). Network/device/remote providers remain **unavailable** (fail closed). |
+| Required providers + generalized tool calls with operation-bound authorization, target restrictions, final revalidation | **Partial** | Tool-call mediation is **Verified** (`tools.ts`, `tools.test.ts`, adversarial). Governed providers are **implemented** (`providers.ts`, `providers.test.ts`, `governed-providers.test.ts`): default-deny, attach≠enable, provider target constraint, final revalidation. Device/remote ship as contracts (no bridge/transport) and stay unavailable by default; the network transport path is exercised via refusals + a double, not a live fetch. |
 | Capability ON allows, OFF denies, restart preserves policy, unattached enablement rejects through real API + UI | **Verified** | `capabilities.test.ts` (3) + `runtime.test.ts` + `SettingsPanel`/`CapabilityRegistry`. |
 | Scheduler/event-triggered work, durable operations, idempotency, recovery through the same pipeline | **Verified** | `scheduler.ts`, `scheduler.test.ts` (6), `runtime.test.ts` recovery/idempotency. |
 | Protected storage/credentials, independent admin control, emergency isolation, protected audit access | **Verified** | `crypto.ts`, `crypto.test.ts` (5), `runtime.test.ts` interlock/isolation/audit. |
 | Authenticated updates, backup/restore, migration continuity, source retirement without restoring revoked authority | **Partial** | Migration/relocation continuity + journal rollback tested. Signed updates and source retirement are **not** implemented. |
-| Isolated provider/extension lifecycle + provenance/integrity verification | **Deferred (roadmap)** | Extension architecture is Design-only; no extension loader. |
+| Isolated provider/extension lifecycle + provenance/integrity verification | **Partial** | Extension lifecycle **implemented** (`extensions.ts`, `extensions.test.ts`): strict manifests, inert install (`grants: []`), `detectEscalation` non-escalation proof. Signed provenance and WASI-or-equivalent isolated execution are **not** implemented. |
 | Pass required adversarial tests + independent assessment; record findings | **Partial** | `adversarial.test.ts` (20 attack tests across 6 classes) passes. Independent third-party assessment is **not** performed. |
 | Deliver + validate other platforms/builds in approved scope | **Partial** | Linux buildable + installer verified here. Windows/macOS authored, unverified-here. |
 | Publish source + CI, obtain a passing actual GitHub Actions run, merge, publish release artifacts/checksums/signatures | **Partial** | **Published + merged + CI green.** PR #2 → `main` (commit `302002d`). Passing Actions runs: `37333831694` (main, dispatch), `37333406769` (main, push), `37333506397` (branch). Release artifacts/checksums/signatures still pending (no signing certificates). |
@@ -68,7 +68,7 @@ sandbox. "N/A (definitional)" rows are narrative/definitional and carry no runti
 | 8 | Canonical Operation Description | Verified | Canonical operation struct in `runtime.ts`; audit entries. |
 | 9 | Execution Mediator | Verified | `performOperation()` mediates all work; `runtime.test.ts`. |
 | 10 | Capability Registry | Verified | `capabilityDefinitions()` in `model.ts`; `capabilities.test.ts`. |
-| 11 | Provider / Implementation Registry | Partial | Provider metadata + availability reconciliation tested; network/device/remote providers `available:false`. |
+| 11 | Provider / Implementation Registry | Partial | Governed `ProviderRegistry` (`providers.ts`) with probe/attach/detach/execute + summaries; capabilities derive attach/availability from the registry. Device/remote `available:false` until a component is supplied. |
 | 12 | Resource Reservation and Ownership | Verified | `resources.ts` reservation + `ComputePlan`; `engine.test.ts`. |
 | 13 | Resource Reconciliation | Verified | Release on cancel/crash; adversarial resource-reconciliation tests. |
 | 14 | Administrator Control Interlock | Verified | `openAdmin()` drain/cancel; `runtime.test.ts` + adversarial interlock. |
@@ -89,8 +89,8 @@ sandbox. "N/A (definitional)" rows are narrative/definitional and carry no runti
 | 29 | Remote Execution | Partial | `remote.execute` capability defined but unavailable (fail closed). |
 | 30 | Internal ACOS Operation Protocol | Verified | `<tool_call>` protocol in `tools.ts`; `tools.test.ts`; routed through pipeline. |
 | 31 | Internal Service Boundaries | Verified | Server/host/UI separation; `server.ts`, `launch.ts`. |
-| 32 | Extension Architecture | Deferred (roadmap) | No extension loader; Design-only. |
-| 33 | Extension Discovery and Loading | Deferred (roadmap) | Not implemented. |
+| 32 | Extension Architecture | Partial | `extensions.ts`: strict manifest schema, inert install, non-escalation proof. Signed provenance + isolated execution remain. |
+| 33 | Extension Discovery and Loading | Partial | Manifest validation + registry implemented; no signed discovery source or sandboxed loader. |
 | 34 | Capability Registration | Verified | Registry in `model.ts`; `capabilities.test.ts`. |
 | 35 | Operation Cancellation and Cleanup | Verified | `cancel()` + cleanup; `engine.test.ts`, `runtime.test.ts`. |
 | 36 | Durable Operation State | Verified | SQLite durable ops; `scheduler.ts`; `runtime.test.ts`. |
@@ -131,7 +131,7 @@ sandbox. "N/A (definitional)" rows are narrative/definitional and carry no runti
 | 71 | Companion Home | Verified | Durable notes/messages; `runtime.test.ts`. |
 | 72 | Relocation Verification | Verified | SHA-256 integrity; `runtime.test.ts`. |
 | 73 | Relocation Continuity Status | Verified | Honest partial-continuity reporting; `runtime.test.ts`. |
-| 74 | Runtime Completeness Requirement | Partial | Core path complete; providers/extensions open. |
+| 74 | Runtime Completeness Requirement | Partial | Core path complete; governed providers + extension lifecycle implemented; shipped device/remote components, signing and isolation open. |
 | 75 | Updated Prototype 0 Requirements | Verified | Streaming/tools/onboarding delivered. |
 | 76 | Architectural Refinement | N/A (definitional) | Architecture reference. |
 | 77 | Local AI Engine Runtime | Verified | llama.cpp CPU inference; `engine.test.ts`. |
@@ -154,9 +154,10 @@ sandbox. "N/A (definitional)" rows are narrative/definitional and carry no runti
   app), independent security assessment.
 - **Done:** source published, CI green, PR merged to `main`.
 - **Implemented but unverified-here:** Windows installer/lifecycle, macOS path.
-- **Partial (real gaps):** native Windows isolation, accelerator (GPU/NPU) backends, network/
-  device/remote providers, extension lifecycle, signed updates + source retirement, hardware
-  keystore/MFA, external audit anchoring.
+- **Partial (real gaps):** native Windows isolation (adapter + helper authored, unverified on real
+  hardware), accelerator (GPU/NPU) backends, shipped device/remote components + a live network
+  fetch, signed extension provenance + isolated execution, signed updates + source retirement,
+  hardware keystore/MFA, external audit anchoring.
 - **Deferred (roadmap):** bootable standalone OS, third-party extension ecosystem.
 
 See `REMAINING-WORK.md` for the ordered hand-off list and `FINAL-REPORT.md` for the honest

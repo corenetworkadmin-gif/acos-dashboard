@@ -47,15 +47,18 @@ pnpm install:linux                # per-user launcher + desktop entry
    OS-enforced where the platform supports it (cgroups v2 on Linux, Job Objects on Windows).
    Reconcile after cancellation/crash and test 32-worker, memory-pressure and timeout paths.
 
-## Priority 3 — providers and authority
+## Priority 3 — providers and authority (delivered; hardening remains)
 
-9. **Network provider** (`network.request`), **device providers** (`device.microphone`,
-   `device.camera`) and **remote execution** (`remote.execute`). Each must go through the same
-   versioned operation/admission/authorization/audit pipeline with target constraints and final
-   revalidation, and must fail closed when unattached. Track per-provider platform support.
-10. **Extension lifecycle.** Design exists in the architecture (WASI or equivalent). Implement
-    discovery, manifests, authentication, isolation, and the guarantee that extensions cannot grant
-    their own authority or bypass policy.
+9. **Governed providers — delivered.** `network.request`, `device.microphone`, `device.camera`
+   and `remote.execute` now run through a default-deny provider registry
+   (`src/host/providers.ts`) inside the same versioned operation/admission/authorization/audit
+   pipeline, with a provider-specific target constraint and final revalidation. See
+   `docs/providers-and-authority.md`. **Remaining:** ship a real microphone/camera `DeviceBridge`
+   and a real `RemoteTransport`, and verify the network transport path against a live allowlisted
+   host (its refusals are tested; a live fetch is not).
+10. **Extension lifecycle — delivered (inert).** Manifests are validated, install grants nothing
+    (`grants: []`), and non-escalation is proven structurally (`src/host/extensions.ts`).
+    **Remaining:** manifest signing and WASI-or-equivalent isolated execution.
 
 ## Priority 4 — lifecycle and trust
 
@@ -86,5 +89,5 @@ pnpm install:linux                # per-user launcher + desktop entry
 
 ## Current green baseline (do not break)
 
-`pnpm typecheck` clean · `pnpm test` 87/87 · `pnpm test:launch` 2/2 · `pnpm lint` 0 errors ·
+`pnpm typecheck` clean · `pnpm test` 124/124 · `pnpm test:launch` 2/2 · `pnpm lint` 0 errors ·
 `pnpm build` succeeds.

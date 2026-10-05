@@ -10,7 +10,7 @@ It does not claim "complete", "production-ready" or "secure". See
 
 ## Baseline (this sandbox)
 
-- `pnpm typecheck` clean · `pnpm test` **87/87 pass** · `pnpm test:launch` **2/2 pass** ·
+- `pnpm typecheck` clean · `pnpm test` **124/124 pass** · `pnpm test:launch` **2/2 pass** ·
   `pnpm lint` 0 errors (6 pre-existing Fast Refresh warnings) · `pnpm build` succeeds.
 
 ## Implemented in this repository
@@ -18,7 +18,7 @@ It does not claim "complete", "production-ready" or "secure". See
 | Area | Working implementation | Limit |
 | --- | --- | --- |
 | Companion / engine separation | One identity, persistent personality/memories, conversation archive, replaceable engine | Single host daemon; no bootable OS image |
-| Operations | Explicit ID, identity, target, policy version, deterministic admission/execution/terminal states | Providers for network/device/remote remain unavailable |
+| Operations | Explicit ID, identity, target, policy version, deterministic admission/execution/terminal states | CPU execution only; provider results bounded |
 | Policy | Fail-closed allowlist, target/action matching, Safe/Intermediate/Advanced ceilings | — |
 | Resources | Dynamic host discovery, model admission, exclusive inference slot, process limits, cleanup, CPU-time accounting, address-space budget | CPU execution only; logical reservations, not guaranteed physical RAM on every platform |
 | Administrator | Independent host key, expiring HttpOnly session, interlock drain/cancel, emergency termination | Trusted host admin; no hardware keystore, MFA, or remote-deployment hardening |
@@ -27,6 +27,8 @@ It does not claim "complete", "production-ready" or "secure". See
 | Local AI | Verified GGUF, llama.cpp CPU inference, real model/tokenizer health check, ChatML context, offline namespace, cancellation | Qwen/ChatML reference adapter; one concrete tokenizer |
 | **Streaming inference** | Token-by-token stdout iterator through the same admission/authorization/audit pipeline; SSE endpoint; UI token streaming; mid-stream cancellation | CPU path only |
 | **Tool-call mediation** | Declared tools, structured `<tool_call>` JSON parser, routed through the same operation pipeline; model text never executed; unknown/denied tools fail closed | Tool set is the declared reference set |
+| **Governed providers** | Default-deny provider registry; attach (host fact) separated from enable (policy grant); provider `authorizeTarget` is a second constraint, never a grant; network provider with exact-host allowlist, scheme/credential/private-address refusal and DNS-rebinding re-check; device + remote providers as bridge/transport contracts (unavailable without a component) | Network transport path real but exercised via refusal + a deterministic double; no shipped device bridge or remote transport |
+| **Extension lifecycle** | Strict manifest schema; install is inert (`grants: []`); `detectEscalation` structural non-escalation proof; unknown requests grant nothing | No signed registry or WASI-or-equivalent isolation yet |
 | **Guided onboarding** | First-run detection + step flow (hardware → engine → companion → first chat); `/setup` route; first-run banner | — |
 | **Scheduler / event bus** | Durable scheduled + event-triggered tasks through the authority pipeline; idempotency keys; recovery-journal reconciliation | — |
 | Home | Governed read/write, durable notes, messages retained independent of engine | Bounded note count/length |
@@ -43,11 +45,15 @@ It does not claim "complete", "production-ready" or "secure". See
    roadmap; needs an owner scope decision.)*
 2. Reviewed threat model and independent security assessment; seccomp/cgroup hardening;
    hardware-backed administrative identity; signed audit anchoring.
-3. Native Windows runtime authority/isolation adapter (AppContainer + Job Objects + WFP) — currently
-   a written design only (`docs/windows-native-isolation.md`); the shipped Windows path is a
-   managed WSL2 guest runtime.
-4. Signed provider/extension registry and WASI-or-equivalent extension isolation; capability-
-   specific device/network implementations and constrained remote execution.
+3. Native Windows runtime authority/isolation adapter (AppContainer + Job Objects + WFP) — the
+   adapter, native helper source and six-point verifier are implemented and unit-tested
+   (`docs/windows-native-isolation.md`), but the native helper is authored-not-compiled here and the
+   path is unverified on real Windows 11 hardware; the shipped Windows path remains a managed WSL2
+   guest runtime.
+4. Signed provider/extension registry and WASI-or-equivalent extension isolation. The governed
+   provider registry, network provider, device/remote contracts and inert extension lifecycle are
+   implemented (`docs/providers-and-authority.md`); what remains is manifest signing, isolated
+   extension execution, and shipped device/remote components.
 5. Authenticated source-to-destination migration with source retirement, identity proofs,
    anti-replication enforcement, transactional snapshot/restore/update orchestration.
 6. GPU/NPU accelerator backends (CUDA/Metal/Vulkan/ROCm) with per-backend isolation and CPU

@@ -27,6 +27,10 @@ export interface ToolDefinition {
   target: string;
   // Which parameter supplies the operation input, if any.
   inputParameter?: string;
+  // Which parameter supplies the operation target, when the target is dynamic
+  // (provider-backed tools). When absent, the runtime uses the provider's
+  // currently attached target.
+  targetParameter?: string;
   parameters: ToolParameter[];
 }
 
@@ -68,6 +72,44 @@ export function toolDefinitions(): ToolDefinition[] {
           type: "string",
           required: true,
           description: "The note to remember (1-4000 characters).",
+        },
+      ],
+    },
+    {
+      // Provider-backed: only runs when an administrator has attached the network
+      // provider with an allowlist and enabled the capability. Default-denied.
+      name: "network.request",
+      description:
+        "Fetch an absolute http(s) URL through the attached network provider.",
+      capability: "network.request",
+      action: "request",
+      target: "",
+      inputParameter: "url",
+      targetParameter: "url",
+      parameters: [
+        {
+          name: "url",
+          type: "string",
+          required: true,
+          description: "Absolute http(s) URL within the attached allowlist.",
+        },
+      ],
+    },
+    {
+      // Provider-backed: only runs when an administrator has attached the remote
+      // transport and enabled the capability. Default-denied.
+      name: "remote.execute",
+      description: "Run a command on the attached remote endpoint.",
+      capability: "remote.execute",
+      action: "execute",
+      target: "",
+      inputParameter: "command",
+      parameters: [
+        {
+          name: "command",
+          type: "string",
+          required: true,
+          description: "The command to run on the attached remote endpoint.",
         },
       ],
     },

@@ -75,6 +75,32 @@ const commandSchema = z.discriminatedUnion("type", [
     })
     .strict(),
   z
+    .object({
+      type: z.literal("attachProvider"),
+      capability: z.string().max(80),
+      config: z.unknown(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("detachProvider"),
+      capability: z.string().max(80),
+    })
+    .strict(),
+  z.object({ type: z.literal("probeProviders") }).strict(),
+  z
+    .object({
+      type: z.literal("installExtension"),
+      manifest: z.unknown(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("removeExtension"),
+      id: z.string().max(80),
+    })
+    .strict(),
+  z
     .object({ type: z.literal("engine"), status: z.enum(["READY", "STOPPED"]) })
     .strict(),
   z
@@ -315,6 +341,21 @@ export function createHostServer(runtime: HostRuntime, key: string) {
             break;
           case "capability":
             result = runtime.setCapability(command.id, command.enabled);
+            break;
+          case "attachProvider":
+            result = runtime.attachProvider(command.capability, command.config);
+            break;
+          case "detachProvider":
+            result = runtime.detachProvider(command.capability);
+            break;
+          case "probeProviders":
+            result = runtime.probeProviders();
+            break;
+          case "installExtension":
+            result = runtime.installExtension(command.manifest);
+            break;
+          case "removeExtension":
+            result = runtime.removeExtension(command.id);
             break;
           case "engine":
             result = await runtime.setEngine(command.status);

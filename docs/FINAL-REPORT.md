@@ -48,12 +48,18 @@ scheduler (6), tools (5), adversarial (20), packaging (5), launch (2).
   which requires the owner's explicit agreement before it can be called the product runtime.
 - **No GPU/NPU execution.** Hardware discovery and compatibility logic exist and are tested with
   synthetic inventories, but inference executes on CPU only. No CUDA/Metal/Vulkan/ROCm backend.
-- **Providers incomplete.** Network, device and remote-execution capabilities are defined but
-  unavailable and fail closed. This is deliberate (default-deny) but means those requirements are
-  unfinished, not merely switched off.
+- **Providers governed, components not shipped.** Network, device and remote-execution capabilities
+  now run through a governed provider registry (`src/host/providers.ts`): default-deny, attach
+  separated from enable, and a provider-specific target constraint. The **network** provider is
+  real (exact-host allowlist, scheme/credential/private-address refusal, DNS-rebinding re-check).
+  The **device** (microphone/camera) and **remote** providers ship as bridge/transport *contracts*
+  with no component, so they stay unavailable until one is supplied. That is deliberate
+  (default-deny), and it means a live device capture and a live remote session are unfinished.
 - **No signed updates, no source retirement.** Recovery-journal rollback exists; a signed update
   channel and authenticated migration-with-retirement do not.
-- **No extension lifecycle.** Extension architecture is design-only; no loader or isolation.
+- **Extension lifecycle implemented but not isolated.** Manifests are validated, install is inert
+  (`grants: []`) and non-escalation is proven structurally (`src/host/extensions.ts`). What remains
+  is manifest signing and WASI-or-equivalent isolated execution.
 - **No independent security assessment.** The adversarial suite is self-authored.
 - **No signing certificates or release artifacts.** (Source *is* published and CI *is* green —
   see §6.)
@@ -106,7 +112,8 @@ not yet.
 ## 6. Bottom line
 
 The program is materially further along: it streams, mediates tool calls, onboards, schedules,
-encrypts its Home, and defends itself in adversarial tests — with a real Linux installer and a
-prepared Windows installer. It is **not finished**: the Windows runtime, GPU execution, remaining
-providers, signed updates, extension lifecycle, an independent audit, and the GitHub publish/CI
-step all remain. `REMAINING-WORK.md` is the ordered hand-off list for the next engineer.
+encrypts its Home, governs providers and extensions, and defends itself in adversarial tests —
+with a real Linux installer, a prepared Windows installer and a macOS installer. It is **not
+finished**: the native Windows runtime, GPU execution, shipped device/remote components, signed
+updates, isolated extension execution, and an independent audit remain. `REMAINING-WORK.md` is the
+ordered hand-off list for the next engineer.

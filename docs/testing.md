@@ -29,7 +29,7 @@ for script in src/host/*.sh; do bash -n "$script"; done
 
 `test:launch` builds the production dashboard before exercising the actual host/UI launcher. `pnpm build` may be used separately when only a build is needed. The suite uses temporary SQLite directories, ephemeral loopback ports, synthetic admin identities and explicit fixture engines. It does not touch your configured companion Home. Existing Fast Refresh warnings in bundled UI files and build deprecation/Browserslist warnings are documented; errors must still fail CI.
 
-Current sandbox result: `pnpm test` **87/87 pass**, `pnpm test:launch` **2/2 pass**, typecheck clean, lint 0 errors, build green. `packaging.test.ts` installs and uninstalls the Linux launcher into a temporary prefix and does not touch your real desktop entries.
+Current sandbox result: `pnpm test` **124/124 pass**, `pnpm test:launch` **2/2 pass**, typecheck clean, lint 0 errors, build green. `packaging.test.ts` installs and uninstalls the Linux launcher into a temporary prefix and does not touch your real desktop entries.
 
 | Tests | Coverage |
 | --- | --- |
