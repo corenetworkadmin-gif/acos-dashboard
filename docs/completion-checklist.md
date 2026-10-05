@@ -31,7 +31,7 @@ observed tests exist. Nothing here is a claim of "complete", "production-ready" 
 
 | Gate | Status | Evidence / blocker |
 | --- | --- | --- |
-| Integrate packaged source with current GitHub work, preserving user changes | **Blocked** | Source integrated locally into `acos-dashboard/`; pushing requires GitHub auth not present in the sandbox. A git repo + commit bundle is prepared. |
+| Integrate packaged source with current GitHub work, preserving user changes | **Verified** | Delivered via PR #2, squash-merged to `main` (commit `302002d`). Upstream `main` history preserved (branch rebased onto `894677d`). |
 | Resolve standalone-OS vs desktop-app scope conflict with the owner | **Blocked** | Needs an explicit owner decision. The delivered program implements the **desktop-app** scope; OS-only items are listed as Deferred. |
 | Working Windows 11 installer + desktop lifecycle, guided first run, no manual developer setup | **Implemented (unverified-here)** | `src/windows/Install-ACOS.ps1` (Win11 build check, WSL2 + Ubuntu-24.04, repo clone, shortcuts, `Start-ACOS.cmd`), `Uninstall-ACOS.ps1`. Authored for Windows; cannot be executed in a Linux sandbox. |
 | Verify native Windows runtime authority/isolation, or owner-approved managed guest runtime | **Blocked / Partial** | Native isolation adapter is **Design-only** (`docs/windows-native-isolation.md`). The shipped path is a managed WSL2 guest runtime; owner agreement required. |
@@ -46,7 +46,7 @@ observed tests exist. Nothing here is a claim of "complete", "production-ready" 
 | Isolated provider/extension lifecycle + provenance/integrity verification | **Deferred (roadmap)** | Extension architecture is Design-only; no extension loader. |
 | Pass required adversarial tests + independent assessment; record findings | **Partial** | `adversarial.test.ts` (20 attack tests across 6 classes) passes. Independent third-party assessment is **not** performed. |
 | Deliver + validate other platforms/builds in approved scope | **Partial** | Linux buildable + installer verified here. Windows/macOS authored, unverified-here. |
-| Publish source + CI, obtain a passing actual GitHub Actions run, merge, publish release artifacts/checksums/signatures | **Blocked** | No GitHub auth in sandbox; no signing certificates. CI workflow exists (`.github/workflows/ci.yml`). |
+| Publish source + CI, obtain a passing actual GitHub Actions run, merge, publish release artifacts/checksums/signatures | **Partial** | **Published + merged + CI green.** PR #2 → `main` (commit `302002d`). Passing Actions runs: `37333831694` (main, dispatch), `37333406769` (main, push), `37333506397` (branch). Release artifacts/checksums/signatures still pending (no signing certificates). |
 | Update user/install/testing docs, screenshots, repo description, support | **Partial** | Docs updated (`install-linux.md`, `windows.md`, `windows-native-isolation.md`, `testing.md`, `implementation-status.md`, this file, `FINAL-REPORT.md`, `REMAINING-WORK.md`). Screenshots/support channel pending. |
 | Demonstrate installed product to owner + answer hardware-independence audit question | **Partial** | Hardware-independence answer written in `FINAL-REPORT.md`; live demo to owner pending. |
 | Close every applicable architecture row with evidence; list every blocked/missing item before claiming completion | **Verified** | This matrix + `REMAINING-WORK.md` list every open item honestly. |
@@ -150,8 +150,9 @@ sandbox. "N/A (definitional)" rows are narrative/definitional and carry no runti
 
 ## Summary of open work
 
-- **Blocked (external):** GitHub publish/CI run/merge (auth), signing certificates, owner scope
-  decision (standalone-OS vs desktop app), independent security assessment.
+- **Blocked (external):** signing certificates, owner scope decision (standalone-OS vs desktop
+  app), independent security assessment.
+- **Done:** source published, CI green, PR merged to `main`.
 - **Implemented but unverified-here:** Windows installer/lifecycle, macOS path.
 - **Partial (real gaps):** native Windows isolation, accelerator (GPU/NPU) backends, network/
   device/remote providers, extension lifecycle, signed updates + source retirement, hardware

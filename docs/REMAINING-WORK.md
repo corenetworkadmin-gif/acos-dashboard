@@ -17,10 +17,9 @@ pnpm install:linux                # per-user launcher + desktop entry
 
 ## Priority 0 — unblock the release pipeline
 
-1. **GitHub auth + publish.** The sandbox has no GitHub credentials. `acos-dashboard/` is prepared
-   for a clean push (git repo + commit). Push to `corenetworkadmin-gif/acos-dashboard`, open a PR,
-   and let `.github/workflows/ci.yml` run. Fix any CI-only failures (the local suite is green).
-   Merge through repository controls. **This is the single biggest blocker.**
+1. **GitHub publish — DONE.** The delivery is published: PR #2 squash-merged to `main`
+   (commit `302002d`), CI green (runs `37333831694`, `37333406769`, `37333506397`).
+   Remaining sub-item: publish **release artifacts/checksums/signatures** once certificates exist.
 2. **Owner scope decision.** Get an explicit ruling on standalone-OS vs desktop-app scope. The
    delivered program is the desktop app. Record the decision in `completion-checklist.md`.
 

@@ -55,9 +55,8 @@ scheduler (6), tools (5), adversarial (20), packaging (5), launch (2).
   channel and authenticated migration-with-retirement do not.
 - **No extension lifecycle.** Extension architecture is design-only; no loader or isolation.
 - **No independent security assessment.** The adversarial suite is self-authored.
-- **No GitHub publish / CI run / merge.** The sandbox has no GitHub credentials; the repository is
-  prepared for a clean push but the actual Actions run and merge are not performed.
-- **No signing certificates or release artifacts.**
+- **No signing certificates or release artifacts.** (Source *is* published and CI *is* green —
+  see §6.)
 - **Scope conflict unresolved.** The architecture describes a standalone OS; the roadmap describes
   a desktop app. This delivery implements the **desktop-app** scope. The standalone-OS items
   (bootable distribution, secure boot, OS-level device mediation) require an explicit owner ruling.
@@ -92,7 +91,19 @@ unsupported. Windows/macOS discovery is unverified in this sandbox. The answer a
 **discovery and configuration**, which are genuinely hardware-agnostic; **accelerator execution** is
 not yet.
 
-## 5. Bottom line
+## 5. Publication (GitHub)
+
+- **Branch:** `finish-acos-phase1` → **PR #2** → squash-merged to `main` (commit `302002d`).
+- **CI:** GitHub Actions `.github/workflows/ci.yml` on `ubuntu-24.04`, all steps green —
+  namespace-isolation check, `pnpm install --frozen-lockfile`, `typecheck`, `lint`, `test`,
+  `test:launch`, shell syntax.
+  - Passing runs: [`37333831694`](https://github.com/corenetworkadmin-gif/acos-dashboard/actions/runs/37333831694) (main, dispatch),
+    [`37333406769`](https://github.com/corenetworkadmin-gif/acos-dashboard/actions/runs/37333406769) (main, push),
+    [`37333506397`](https://github.com/corenetworkadmin-gif/acos-dashboard/actions/runs/37333506397) (branch, dispatch).
+- **Upstream history preserved:** the delivery branch was rebased onto `894677d` so it shares
+  history with `main`; no upstream commits were rewritten.
+
+## 6. Bottom line
 
 The program is materially further along: it streams, mediates tool calls, onboards, schedules,
 encrypts its Home, and defends itself in adversarial tests — with a real Linux installer and a
