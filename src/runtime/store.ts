@@ -1,7 +1,60 @@
 import type { HardwareReport, ComputePlan } from "./hardware";
 import { useSyncExternalStore } from "react";
-import type { RuntimeState } from "./model";
-export type HostState = RuntimeState & {
+import type { RuntimeState, CapabilityView } from "./model";
+export type HostState = Omit<RuntimeState, "capabilities" | "onboarding"> & {
+  capabilities: CapabilityView[];
+  onboarding: {
+    completed: boolean;
+    companionHome: boolean;
+    steps: { id: string; label: string; done: boolean }[];
+  };
+  scheduler: {
+    tasks: {
+      id: string;
+      name: string;
+      capability: string;
+      action: string;
+      target: string;
+      input: string;
+      kind: string;
+      intervalMs: number | null;
+      eventName: string | null;
+      enabled: boolean;
+      lastRun: number | null;
+      nextRun: number | null;
+      runs: number;
+      idempotencyKey: string | null;
+    }[];
+    events: { id: string; timestamp: number; name: string; detail: string }[];
+    journal: {
+      id: string;
+      operationId: string;
+      marker: string;
+      timestamp: number;
+      detail: string;
+      resolved: boolean;
+    }[];
+    recovery: {
+      operationId: string;
+      lastMarker: string;
+      decision: string;
+      reason: string;
+    }[];
+    recoveryRequired: boolean;
+    idempotency: {
+      key: string;
+      operationId: string;
+      status: string;
+      timestamp: number;
+    }[];
+  };
+  storage: {
+    encrypted: boolean;
+    algorithm: string;
+    keyFingerprint: string;
+    migratedFromPlaintext: boolean;
+    integrity: string;
+  };
   host: {
     connected: boolean;
     platform: string;
@@ -88,6 +141,105 @@ export async function command(
 export async function login(key: string) {
   await request("login", { key });
   await refresh();
+}
+// Streams a chat.send operation over Server-Sent Events. Tokens are delivered to
+// onToken as they arrive; the committed host state is published on completion.
+// When options.tools is set, the host mediates structured tool calls and reports
+// them through options.onTool.
+export interface ToolEvent {
+  type: "tool" | "tool_result" | "tool_denied";
+  name: string;
+  arguments?: Record<string, unknown>;
+  result?: unknown;
+  reason?: string;
+}
+export async function streamChat(
+  input: string,
+  onToken: (text: string) => void,
+  onStatus?: (status: string) => void,
+  options?: { tools?: boolean; onTool?: (event: ToolEvent) => void },
+): Promise<void> {
+  onStatus?.("requesting");
+  const response = await fetch("/api/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      capability: "chat.send",
+      action: "send",
+      target: "companion/chat",
+      input,
+      tools: options?.tools ?? false,
+    }),
+  });
+  if (!response.ok || !response.body) {
+    let message = "Streaming request failed";
+    try {
+      const data = (await response.json()) as { error?: string };
+      message = data.error ?? message;
+    } catch {
+      /* Non-JSON error body. */
+    }
+    if (response.status === 401)
+      publish({ data: null, connected: true, authRequired: true, error: null });
+    throw new Error(message);
+  }
+  onStatus?.("streaming");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let nextState: HostState | null = null;
+  let streamError: string | null = null;
+  const handle = (event: string, data: string) => {
+    if (!data) return;
+    const parsed = JSON.parse(data) as {
+      text?: string;
+      error?: string;
+      state?: HostState;
+      name?: string;
+      arguments?: Record<string, unknown>;
+      result?: unknown;
+      reason?: string;
+    };
+    if (event === "token") onToken(parsed.text ?? "");
+    else if (event === "done") nextState = parsed.state ?? null;
+    else if (event === "tool" || event === "tool_result" || event === "tool_denied")
+      options?.onTool?.({
+        type: event,
+        name: parsed.name ?? "unknown",
+        arguments: parsed.arguments,
+        result: parsed.result,
+        reason: parsed.reason,
+      });
+    else if (event === "error") {
+      streamError = parsed.error ?? "Stream failed";
+      if (parsed.state) nextState = parsed.state;
+    }
+  };
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() ?? "";
+    for (const part of parts) {
+      let event = "message";
+      let data = "";
+      for (const line of part.split("\n")) {
+        if (line.startsWith("event: ")) event = line.slice(7).trim();
+        else if (line.startsWith("data: ")) data += line.slice(6);
+      }
+      handle(event, data);
+    }
+  }
+  if (nextState)
+    publish({
+      data: nextState,
+      error: null,
+      authRequired: false,
+      connected: true,
+    });
+  if (streamError) throw new Error(streamError);
+  else void refresh();
 }
 export async function logout() {
   await request("logout", {});

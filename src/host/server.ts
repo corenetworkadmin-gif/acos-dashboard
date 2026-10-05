@@ -25,6 +25,41 @@ const commandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("releaseIsolation") }).strict(),
   z.object({ type: z.literal("cancel") }).strict(),
   z.object({ type: z.literal("clearConversation") }).strict(),
+  z.object({ type: z.literal("confirmCompanionHome") }).strict(),
+  z.object({ type: z.literal("completeOnboarding") }).strict(),
+  z.object({ type: z.literal("reopenOnboarding") }).strict(),
+  z
+    .object({
+      type: z.literal("scheduleTask"),
+      name: z.string().trim().min(1).max(80),
+      capability: z.string().max(80),
+      action: z.string().max(32),
+      target: z.string().max(100),
+      input: z.string().max(4000).default(""),
+      kind: z.enum(["interval", "event"]),
+      intervalMs: z.number().int().positive().max(86_400_000).optional(),
+      eventName: z.string().trim().max(80).optional(),
+      idempotencyKey: z.string().trim().max(80).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("setScheduledEnabled"),
+      id: z.string().max(64),
+      enabled: z.boolean(),
+    })
+    .strict(),
+  z.object({ type: z.literal("removeScheduled"), id: z.string().max(64) }).strict(),
+  z
+    .object({
+      type: z.literal("emitEvent"),
+      name: z.string().trim().min(1).max(80),
+      detail: z.string().max(200).default(""),
+    })
+    .strict(),
+  z.object({ type: z.literal("runScheduled") }).strict(),
+  z.object({ type: z.literal("recover") }).strict(),
+  z.object({ type: z.literal("verifyStorage") }).strict(),
   z.object({ type: z.literal("pause"), paused: z.boolean() }).strict(),
   z
     .object({
@@ -171,6 +206,82 @@ export function createHostServer(runtime: HostRuntime, key: string) {
           );
           return send(200, { success: true });
         }
+        // Server-Sent Events streaming for chat.send. Runs the same admission and
+        // authorization pipeline; tokens are delivered as they are generated.
+        if (req.method === "POST" && req.url === "/api/stream") {
+          const authenticatedSession = session;
+          const request = z
+            .object({
+              capability: z.string().max(80),
+              action: z.string().max(32),
+              target: z.string().max(100),
+              input: z.string().max(4000).default(""),
+              tools: z.boolean().default(false),
+            })
+            .strict()
+            .parse(await body(req));
+          if (session !== authenticatedSession || session.expires < Date.now())
+            return send(401, {
+              error: "Session ended while receiving this request.",
+            });
+          if (request.tools && request.capability !== "chat.send")
+            return send(400, {
+              error: "Tool-mediated chat is only available for chat.send.",
+            });
+          res.statusCode = 200;
+          res.setHeader("Content-Type", "text/event-stream");
+          res.setHeader("Cache-Control", "no-store");
+          res.setHeader("Connection", "keep-alive");
+          res.setHeader("X-Accel-Buffering", "no");
+          const write = (event: string, data: unknown) => {
+            res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+          };
+          let finished = false;
+          // A disconnected client cancels the in-flight isolated process.
+          res.on("close", () => {
+            if (!finished) void runtime.cancel();
+          });
+          try {
+            if (request.tools) {
+              await runtime.runChatWithTools(request.input, (event) => {
+                if (event.type === "token") write("token", { text: event.text });
+                else if (event.type === "tool")
+                  write("tool", {
+                    name: event.name,
+                    arguments: event.arguments,
+                  });
+                else if (event.type === "tool_result")
+                  write("tool_result", {
+                    name: event.name,
+                    result: event.result,
+                  });
+                else
+                  write("tool_denied", {
+                    name: event.name,
+                    reason: event.reason,
+                  });
+              });
+            } else {
+              await runtime.runStreaming(
+                request.capability,
+                request.action,
+                request.target,
+                request.input,
+                (text) => write("token", { text }),
+              );
+            }
+            write("done", { state: view() });
+          } catch (error) {
+            write("error", {
+              error: error instanceof Error ? error.message : "Stream failed",
+              state: view(),
+            });
+          } finally {
+            finished = true;
+            res.end();
+          }
+          return;
+        }
         if (req.method !== "POST" || req.url !== "/api/command")
           return send(404, { error: "Endpoint not found" });
         const authenticatedSession = session;
@@ -213,6 +324,46 @@ export function createHostServer(runtime: HostRuntime, key: string) {
             break;
           case "clearConversation":
             result = runtime.clearConversation();
+            break;
+          case "confirmCompanionHome":
+            result = runtime.confirmCompanionHome();
+            break;
+          case "completeOnboarding":
+            result = runtime.completeOnboarding();
+            break;
+          case "reopenOnboarding":
+            result = runtime.reopenOnboarding();
+            break;
+          case "scheduleTask":
+            result = runtime.scheduleTask({
+              name: command.name,
+              capability: command.capability,
+              action: command.action,
+              target: command.target,
+              input: command.input,
+              kind: command.kind,
+              intervalMs: command.intervalMs,
+              eventName: command.eventName,
+              idempotencyKey: command.idempotencyKey,
+            });
+            break;
+          case "setScheduledEnabled":
+            result = runtime.setScheduledEnabled(command.id, command.enabled);
+            break;
+          case "removeScheduled":
+            result = runtime.removeScheduled(command.id);
+            break;
+          case "emitEvent":
+            result = await runtime.emitEvent(command.name, command.detail);
+            break;
+          case "runScheduled":
+            result = await runtime.runScheduled();
+            break;
+          case "recover":
+            result = runtime.recover();
+            break;
+          case "verifyStorage":
+            result = runtime.verifyStorage();
             break;
           case "run":
             result = await runtime.run(
@@ -273,6 +424,7 @@ if (
       "Administrator key file is malformed. Restore the trusted key before startup.",
     );
   const runtime = new HostRuntime(directory, new LocalEngine(engineConfig()));
+  runtime.startScheduler();
   const server = createHostServer(
     runtime,
     readFileSync(keyPath, "utf8").trim(),

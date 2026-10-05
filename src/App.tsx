@@ -11,6 +11,8 @@ import LocalAIEngineStatus from "@/components/LocalAIEngineStatus";
 import OperationLog from "@/components/OperationLog";
 import CompanionImport from "@/components/CompanionImport";
 import SettingsPanel from "@/components/SettingsPanel";
+import OnboardingFlow from "@/components/OnboardingFlow";
+import SchedulerPanel from "@/components/SchedulerPanel";
 export default function App() {
   return (
     <TooltipProvider>
@@ -19,7 +21,23 @@ export default function App() {
         <Routes>
           <Route element={<Workspace />}>
             <Route path="/" element={<Index />} />
+            <Route
+              path="/setup"
+              element={
+                <AdminGate>
+                  <OnboardingFlow />
+                </AdminGate>
+              }
+            />
             <Route path="/companion" element={<CompanionChat />} />
+            <Route
+              path="/scheduler"
+              element={
+                <AdminGate>
+                  <SchedulerPanel />
+                </AdminGate>
+              }
+            />
             <Route
               path="/capabilities"
               element={

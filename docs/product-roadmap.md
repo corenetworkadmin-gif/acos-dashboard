@@ -8,18 +8,27 @@ ACOS is a **desktop application** that runs on Windows, macOS, and Linux. It hos
 
 The product promise: *your companion, on your terms. Local intelligence. Persistent memory. Explicit authority.*
 
-## Where we are today (Phase 0 — prototype)
+## Where we are today (Phase 0 → Phase 1)
 
 A working host runtime on Linux/WSL with:
 
 - Real offline CPU inference (llama.cpp + Qwen/ChatML reference)
-- Persistent Companion Home (durable memory, independent of the engine)
+- Streaming responses with cancellation, through the same authority pipeline
+- Structured tool-call mediation (model text is never executed)
+- Persistent, **encrypted** Companion Home (durable memory, independent of the engine)
 - Capability registry with fail-closed policy
 - Administrator interlock and emergency isolation
 - Hash-linked audit journal
+- Durable scheduler / event bus with idempotency and recovery-journal reconciliation
+- Guided first-run onboarding (hardware → engine → companion → first chat)
 - Relocation import (bring an existing companion home)
+- An adversarial test suite covering financial isolation, propagation, approval replay,
+  recovery abuse, administrator interlock and resource reconciliation
+- A per-user Linux installer with a real desktop entry, plus a Windows PowerShell installer
 
-**Strong security posture for a prototype.** But not yet installable by a normal person: it requires WSL2, a terminal, and manual configuration.
+**Strong security posture.** Phase-1 items 4 and 6 are complete; items 1, 2 and 5 are partial.
+Still not a finished consumer product: GPU execution, signed updates, an independent audit and a
+verified native Windows runtime remain. See [remaining work](REMAINING-WORK.md).
 
 ---
 
@@ -27,15 +36,15 @@ A working host runtime on Linux/WSL with:
 
 **Goal:** a normal person can download, install, and use ACOS without a terminal.
 
-| # | Deliverable | What it means | Notes |
+| # | Deliverable | What it means | Status |
 |---|-------------|---------------|-------|
-| 1 | **Native desktop app** | Package the dashboard + host runtime as a real app with an installer for Windows, macOS, and Linux | The single biggest unlock. Turns "install WSL2 + Ubuntu" into "double-click and go." |
-| 2 | **One-click setup with hardware detection** | The app detects GPU/CPU/RAM and configures itself; downloads the right engine build automatically | The repo already detects hardware and downloads+verifies a pinned engine — it just needs to become hardware-aware and automatic. |
-| 3 | **GPU / NPU execution** | CUDA (NVIDIA), Metal (Apple), Vulkan/ROCm (AMD), NPU where supported | This machine already has two CUDA GPUs (RTX 3050, GTX 1660 SUPER). Requires CUDA-enabled engine builds and mounting GPU device nodes into the sandbox. |
-| 4 | **Streaming inference** | Tokens appear as they're generated instead of after a long wait | Requires a streaming API through the host to the UI. |
-| 5 | **Generalized tool-call adapter** | The companion can call tools across model architectures, not just the Qwen/ChatML reference | Use structured grammar-based tool calls, parsed and routed through the operation pipeline. |
-| 6 | **Onboarding / first-run experience** | A guided setup flow, not a terminal | First-run: detect hardware → install engine → create companion → first conversation. |
-| 7 | **Auto-updates** | Signed, safe updates that preserve companion state | The transactional-update design in the spec applies here. |
+| 1 | **Native desktop app** | Package the dashboard + host runtime as a real app with an installer for Windows, macOS, and Linux | **Partial** — Linux installer + desktop entry verified here; Windows PowerShell installer authored (unverified-here); macOS pending |
+| 2 | **One-click setup with hardware detection** | The app detects GPU/CPU/RAM and configures itself; downloads the right engine build automatically | **Partial** — dynamic hardware discovery + engine download/verify + guided onboarding implemented; accelerator selection is inventory-only |
+| 3 | **GPU / NPU execution** | CUDA (NVIDIA), Metal (Apple), Vulkan/ROCm (AMD), NPU where supported | **Not started** — discovery/compatibility logic exists; execution is CPU-only |
+| 4 | **Streaming inference** | Tokens appear as they're generated instead of after a long wait | **Done** — streaming iterator + SSE + UI + cancellation, through the operation pipeline |
+| 5 | **Generalized tool-call adapter** | The companion can call tools across model architectures, not just the Qwen/ChatML reference | **Partial** — structured `<tool_call>` mediation through the pipeline; one concrete model adapter |
+| 6 | **Onboarding / first-run experience** | A guided setup flow, not a terminal | **Done** — first-run detection + hardware → engine → companion → first chat flow |
+| 7 | **Auto-updates** | Signed, safe updates that preserve companion state | **Not started** — recovery-journal rollback exists; no signed update channel |
 
 **Requires:** desktop packaging work, GPU engine builds, a streaming API, tool-call parsing, onboarding UI.
 

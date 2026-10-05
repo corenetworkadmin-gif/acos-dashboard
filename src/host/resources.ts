@@ -32,7 +32,7 @@ export function planCompute(
     throw new Error(hardware.isolation.reason ?? "Isolation unavailable.");
   if (!Number.isSafeInteger(workload.memoryBytes) || workload.memoryBytes <= 0)
     throw new Error(
-      "The selected model must declare a positive memory budget (ACOS_MODEL_MEMORY_MB).",
+      "The selected model must declare a positive memory budget (ACOS_MODEL_RAM_MB).",
     );
   if (
     !Number.isFinite(policy.memoryFraction) ||

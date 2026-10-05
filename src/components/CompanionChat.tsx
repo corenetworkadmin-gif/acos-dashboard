@@ -6,12 +6,14 @@ import {
   Database,
   MessageSquare,
   Plus,
+  Wrench,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { command, useConnection, useRuntime } from "@/runtime/store";
+import { Switch } from "@/components/ui/switch";
+import { command, streamChat, useConnection, useRuntime } from "@/runtime/store";
 import { Widget } from "./Widget";
 import { ActionButton } from "./ActionButton";
 import StatusBadge from "./StatusBadge";
@@ -21,6 +23,11 @@ export default function CompanionChat() {
   const [input, setInput] = useState("");
   const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
+  const [streaming, setStreaming] = useState("");
+  const [toolsEnabled, setToolsEnabled] = useState(false);
+  const [toolLog, setToolLog] = useState<
+    { name: string; detail: string; denied: boolean }[]
+  >([]);
   const end = useRef<HTMLDivElement>(null);
   const blocked =
     !connected ||
@@ -30,22 +37,43 @@ export default function CompanionChat() {
     state.engine !== "READY";
   useEffect(() => {
     end.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [state.messages.length]);
+  }, [state.messages.length, streaming]);
   const send = async () => {
     if (!input.trim() || blocked || sending || state.host.busy) return;
+    const text = input;
     setSending(true);
+    setStreaming("");
+    setToolLog([]);
+    setInput("");
     try {
-      await command("run", {
-        capability: "chat.send",
-        action: "send",
-        target: "companion/chat",
-        input,
-      });
-      setInput("");
+      await streamChat(
+        text,
+        (delta) => setStreaming((previous) => previous + delta),
+        undefined,
+        {
+          tools: toolsEnabled,
+          onTool: (event) =>
+            setToolLog((previous) => [
+              ...previous,
+              {
+                name: event.name,
+                detail:
+                  event.type === "tool"
+                    ? "requested"
+                    : event.type === "tool_result"
+                      ? "completed"
+                      : (event.reason ?? "denied"),
+                denied: event.type === "tool_denied",
+              },
+            ]),
+        },
+      );
     } catch (e) {
       toast.error((e as Error).message);
+      setInput(text);
     } finally {
       setSending(false);
+      setStreaming("");
     }
   };
   return (
@@ -113,15 +141,47 @@ export default function CompanionChat() {
             ))
           )}
           {sending && (
-            <p
-              role="status"
-              className="animate-pulse text-xs text-muted-foreground"
-            >
-              Generating locally…
-            </p>
+            <div className="flex justify-start">
+              <div className="max-w-[85%] rounded-xl bg-muted/60 px-4 py-3">
+                <p className="mb-1.5 text-[10px] font-medium opacity-60">
+                  {state.companion.name}
+                </p>
+                {streaming ? (
+                  <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+                    {streaming}
+                    <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-primary align-middle" />
+                  </p>
+                ) : (
+                  <p
+                    role="status"
+                    className="animate-pulse text-xs text-muted-foreground"
+                  >
+                    Generating locally…
+                  </p>
+                )}
+              </div>
+            </div>
           )}
           <div ref={end} />
         </div>
+        {toolLog.length > 0 && (
+          <div className="mb-3 flex justify-start">
+            <div className="max-w-[85%] space-y-1.5 rounded-xl border border-dashed bg-background/60 px-3 py-2">
+              <p className="flex items-center gap-1.5 text-[10px] font-medium text-muted-foreground">
+                <Wrench size={12} /> Tool activity
+              </p>
+              {toolLog.map((entry, index) => (
+                <p
+                  key={index}
+                  className={`text-[11px] ${entry.denied ? "text-amber-700" : "text-muted-foreground"}`}
+                >
+                  <span className="font-mono">{entry.name}</span> ·{" "}
+                  {entry.detail}
+                </p>
+              ))}
+            </div>
+          </div>
+        )}
         {blocked && (
           <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
             {state.adminOpen ? (
@@ -146,6 +206,14 @@ export default function CompanionChat() {
             void send();
           }}
         >
+          <label className="mb-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+            <Switch
+              checked={toolsEnabled}
+              onCheckedChange={setToolsEnabled}
+              aria-label="Allow tool requests"
+            />
+            Allow the companion to request tools (ACOS decides each request)
+          </label>
           <Textarea
             aria-label="Message your companion"
             value={input}

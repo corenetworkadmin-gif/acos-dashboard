@@ -2,6 +2,14 @@
 
 The local AI runtime runs in **Ubuntu 24.04 on WSL2**, and the dashboard opens in your regular Windows browser. The installer selects x64 or ARM64 Node tools. The optional reference AI download is x64 only; ARM64 requires a matching CPU engine binary. ACOS starts without a model.
 
+> **Automated install.** On an elevated PowerShell you can run the installer
+> `src/windows/Install-ACOS.ps1`, which enables WSL2, installs Ubuntu-24.04,
+> clones or updates the checkout, runs the Linux setup, and creates Desktop and
+> Start Menu shortcuts. It is authored for Windows and is not executed in the
+> Linux development sandbox; the sections below remain the manual path and the
+> troubleshooting reference. A native (non-WSL2) isolation adapter is specified
+> in [windows-native-isolation.md](windows-native-isolation.md).
+
 Allow space for the selected dependencies and Internet access for installation. The optional engine checks for 1.5 GiB free on its destination filesystem. Model loading checks actual available guest memory; no fixed Windows RAM size or GPU is required. Model execution is offline after installation. Your computer must remain awake and the launcher must remain running to use ACOS.
 
 ## 1. Install WSL2

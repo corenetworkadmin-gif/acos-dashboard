@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { LocalEngine } from "./engine.ts";
+import { LocalEngine, markerSafeLength } from "./engine.ts";
 function fixture(script: string, timeoutMs = 2000) {
   const dir = mkdtempSync(path.join(tmpdir(), "acos-engine-test-"));
   const binary = path.join(dir, "engine");
@@ -80,6 +80,45 @@ test("fresh memory admission rejects pressure before spawning and releases real 
     await assert.rejects(f.engine.infer("hi"), /Insufficient available/);
     assert.equal(f.engine.active, null);
     assert.equal(f.engine.reservation, null);
+  } finally {
+    f.close();
+  }
+});
+
+test("markerSafeLength holds back partial trailing end-of-text markers", () => {
+  assert.equal(markerSafeLength("hello"), 5);
+  assert.equal(markerSafeLength("hello["), 5);
+  assert.equal(markerSafeLength("hello[e"), 5);
+  assert.equal(markerSafeLength("hello[end"), 5);
+  assert.equal(markerSafeLength("hello[end of tex"), 5);
+  assert.equal(markerSafeLength("hello[end of text"), 5);
+  assert.equal(markerSafeLength("[end"), 0);
+  assert.equal(markerSafeLength("[en"), 0);
+  assert.equal(markerSafeLength("["), 0);
+  assert.equal(markerSafeLength(""), 0);
+});
+
+test("streaming inference yields deltas and strips the end-of-text marker", async () => {
+  const f = fixture(
+    'printf "Hel"; sleep 0.05; printf "lo "; sleep 0.05; printf "world[end of text]"',
+  );
+  try {
+    await f.engine.verify();
+    const chunks: string[] = [];
+    const stream = f.engine.inferStream("hi");
+    let result = "";
+    while (true) {
+      const next = await stream.next();
+      if (next.done) {
+        result = next.value;
+        break;
+      }
+      chunks.push(next.value);
+    }
+    assert.equal(chunks.join(""), "Hello world");
+    assert.equal(result, "Hello world");
+    assert.ok(chunks.length >= 2);
+    assert.ok(!chunks.join("").includes("[end of text]"));
   } finally {
     f.close();
   }

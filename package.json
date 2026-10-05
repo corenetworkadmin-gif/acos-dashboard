@@ -13,10 +13,13 @@
     "test": "node --experimental-strip-types --test src/host/*.test.ts",
     "typecheck": "tsc -p tsconfig.app.json && tsc -p tsconfig.node.json",
     "setup:engine": "bash src/host/install-local-engine.sh",
+    "install:linux": "bash src/host/install-linux.sh",
+    "uninstall:linux": "bash src/host/install-linux.sh --uninstall",
     "start": "node --env-file-if-exists=.env.local --experimental-strip-types src/host/launch.ts",
     "setup:windows": "bash src/host/setup-wsl.sh",
     "check:host": "node --experimental-strip-types src/host/doctor.ts",
-    "test:launch": "pnpm build && node --experimental-strip-types --test src/host/launch.integration.ts"
+    "test:launch": "pnpm build && node --experimental-strip-types --test src/host/launch.integration.ts",
+    "test:engine": "node --env-file-if-exists=.env.local --experimental-strip-types src/host/engine-stress.integration.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
@@ -91,5 +94,7 @@
   },
   "engines": {
     "node": ">=24.0.0"
-  }
+  },
+  "description": "ACOS companion workspace with a local Linux AI runtime, persistent memory, explicit capability policy, and hardware discovery.",
+  "license": "MIT"
 }

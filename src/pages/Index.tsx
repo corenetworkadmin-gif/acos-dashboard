@@ -26,6 +26,23 @@ export default function Index() {
   ).length;
   return (
     <div className="space-y-6">
+      {!state.onboarding.completed && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#cbded3] bg-[#e9f2ec] px-5 py-4">
+          <div className="flex items-center gap-3">
+            <Sparkles size={16} className="text-[#49765c]" />
+            <p className="text-xs text-[#244b37]">
+              First-run setup:{" "}
+              {state.onboarding.steps.filter((step) => step.done).length} of{" "}
+              {state.onboarding.steps.length} steps complete.
+            </p>
+          </div>
+          <Button asChild size="sm">
+            <Link to="/setup">
+              Continue setup <ArrowRight size={14} className="ml-2" />
+            </Link>
+          </Button>
+        </div>
+      )}
       <section className="relative overflow-hidden rounded-xl border border-[#cbded3] bg-[#e9f2ec] p-6 sm:p-8">
         <div className="absolute -right-12 -top-16 h-72 w-72 rounded-full border border-primary/5" />
         <div className="absolute -right-5 -top-9 h-56 w-56 rounded-full border border-primary/10" />
