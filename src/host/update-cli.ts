@@ -1,11 +1,11 @@
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { UpdateStore } from "./update-store.ts";
-import { verifyRelease } from "./releases.ts";
+import { applyUpdateChannel } from "./updates.ts";
 
 export async function checkRelease(directory: string) {
   const temporary = mkdtempSync(path.join(tmpdir(), "acos-update-health-"));
@@ -77,24 +77,6 @@ export async function checkRelease(directory: string) {
     rmSync(temporary, { recursive: true, force: true });
   }
 }
-async function download(url: URL, max: number) {
-  if (url.protocol !== "https:" || url.username || url.password)
-    throw new Error("Update channel requires HTTPS without URL credentials.");
-  const response = await fetch(url, {
-    redirect: "error",
-    signal: AbortSignal.timeout(60_000),
-  });
-  if (!response.ok || !response.body)
-    throw new Error(`Update download failed (${response.status}).`);
-  const chunks: Uint8Array[] = [];
-  let bytes = 0;
-  for await (const chunk of response.body) {
-    bytes += chunk.length;
-    if (bytes > max) throw new Error("Update download exceeds size limit.");
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks);
-}
 async function main() {
   const key = process.env.ACOS_RELEASE_PUBLIC_KEY_FILE;
   if (!key)
@@ -116,30 +98,7 @@ async function main() {
       ),
     );
   } else if (mode === "update" && input) {
-    const url = new URL(input);
-    const signed = JSON.parse((await download(url, 32_000)).toString());
-    const manifest = verifyRelease(signed, store.publicKey, {
-      sequence: store.state().sequence,
-      platform: process.platform,
-      architecture: process.arch,
-    });
-    if (manifest.artifact.bytes > 16 * 1024 * 1024)
-      throw new Error("Desktop package exceeds 16 MiB.");
-    const temporary = mkdtempSync(path.join(tmpdir(), "acos-update-download-"));
-    try {
-      const file = path.join(temporary, "release.tar.gz");
-      writeFileSync(
-        file,
-        await download(
-          new URL(manifest.artifact.name, url),
-          manifest.artifact.bytes,
-        ),
-        { mode: 0o600 },
-      );
-      console.log(await store.apply(signed, file, checkRelease));
-    } finally {
-      rmSync(temporary, { recursive: true, force: true });
-    }
+    console.log(await applyUpdateChannel(store, new URL(input), checkRelease));
   } else if (mode === "rollback") {
     await store.rollback(checkRelease);
     console.log(

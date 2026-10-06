@@ -1,3 +1,4 @@
+import { applyUpdateChannel } from "./updates.ts";
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -67,7 +68,45 @@ test("signed updates stage before activation, retain authority files and roll ba
         "ACOS",
       );
     };
-    await store.apply(manifest(1), archive, health);
+    const signed = manifest(1);
+    const requested: string[] = [];
+    const download = async (url: URL, max: number) => {
+      requested.push(url.pathname);
+      const result = url.pathname.endsWith("manifest.json")
+        ? Buffer.from(JSON.stringify(signed))
+        : bytes;
+      assert.ok(result.length <= max);
+      return result;
+    };
+    await assert.rejects(
+      applyUpdateChannel(
+        store,
+        new URL("http://updates.invalid/manifest.json"),
+        health,
+        download,
+      ),
+      /HTTPS/,
+    );
+    assert.equal(requested.length, 0);
+    await assert.rejects(
+      applyUpdateChannel(
+        store,
+        new URL("https://updates.invalid/manifest.json"),
+        health,
+        async () =>
+          Buffer.from(
+            JSON.stringify({ ...signed, payload: signed.payload + " " }),
+          ),
+      ),
+      /Signature/,
+    );
+    await applyUpdateChannel(
+      store,
+      new URL("https://updates.invalid/manifest.json"),
+      health,
+      download,
+    );
+    assert.deepEqual(requested, ["/manifest.json", "/acos-test.tar.gz"]);
     const first = store.state();
     await assert.rejects(
       store.apply(manifest(2), archive, async () => {

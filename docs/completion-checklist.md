@@ -28,7 +28,7 @@ decision does not attest to Windows/macOS verification or approve the WSL2 runti
 
 - Toolchain: Node **24.14.1**, pnpm **10.34.5**, bubblewrap, `prlimit`, gcc, Python 3.
 - `pnpm typecheck` — clean.
-- `pnpm test` — **136 / 136 pass, 0 fail**.
+- `pnpm test` — **147 / 147 pass, 0 fail**.
 - `pnpm test:launch` — **2 / 2 pass** (built UI + API proxy + shutdown).
 - `pnpm lint` — **0 errors**, 6 pre-existing Fast Refresh warnings.
 - `pnpm build` — succeeds.
@@ -43,7 +43,7 @@ decision does not attest to Windows/macOS verification or approve the WSL2 runti
 | Working Windows 11 installer + desktop lifecycle, guided first run, no manual developer setup | **Implemented (unverified-here)** | `src/windows/Install-ACOS.ps1` (Win11 build check, WSL2 + Ubuntu-24.04, repo clone, shortcuts, `Start-ACOS.cmd`), `Uninstall-ACOS.ps1`. Authored for Windows; cannot be executed in a Linux sandbox. |
 | Verify native Windows runtime authority/isolation, or owner-approved managed guest runtime | **Blocked / Partial** | Native isolation adapter + helper source + six-point verifier are **implemented and unit-tested** (`isolation.ts`, `isolation.test.ts`, `docs/windows-native-isolation.md`); the native helper is authored-not-compiled here and unverified on real Windows 11 hardware. The shipped path is a managed WSL2 guest runtime; owner agreement required. |
 | Verify install, launch, model setup, offline streaming chat, durable Home, cancellation, restart, upgrade/rollback, uninstall/data handling | **Partial** | Linux: installer + launch + upgrade + uninstall/data verified by `packaging.test.ts` (5 tests) and `launch.integration.ts` (2). Streaming/cancel/Home/restart verified by `runtime.test.ts`. Windows/macOS unverified-here. |
-| Hardware discovery + compatible engine/model/resource selection; test CPU-only, accelerators, memory pressure, architectures | **Partial** | `hardware.ts` + `hardware.test.ts` (6) cover synthetic CPU-only/ARM64/multi-accelerator/unknown telemetry/cgroup/provider policy. Linux Vulkan execution is implemented but real-GPU verification is outstanding (`accelerator.ts`, `engine.ts`). |
+| Hardware discovery + compatible engine/model/resource selection; test CPU-only, accelerators, memory pressure, architectures | **Partial** | `hardware.ts` + `hardware.test.ts` (6) cover synthetic CPU-only/ARM64/multi-accelerator/unknown telemetry/cgroup/provider policy. Linux Vulkan/CUDA/ROCm execution paths are implemented but real-GPU verification is outstanding (`backends.ts`, `engine.ts`). |
 | Reserve + enforce per-job resources; reconcile after cancellation/crash | **Partial** | `resources.ts`, `limits.ts`, `engine.test.ts`, `limits.test.ts` cover reservation, CPU-time accounting, address-space budget, 32-worker stress, release. Optional delegated cgroup v2 memory/pids containment is implemented (`containment.ts`); kernel enforcement validation is outstanding here. Unconfigured hosts retain the prior rlimit behavior. |
 | Required providers + generalized tool calls with operation-bound authorization, target restrictions, final revalidation | **Partial** | Tool-call mediation is **Verified** (`tools.ts`, `tools.test.ts`, adversarial). Governed providers are **implemented** (`providers.ts`, `providers.test.ts`, `governed-providers.test.ts`): default-deny, attach≠enable, provider target constraint, final revalidation. Device/remote ship as contracts (no bridge/transport) and stay unavailable by default; the network transport path is exercised via refusals + a double, not a live fetch. |
 | Capability ON allows, OFF denies, restart preserves policy, unattached enablement rejects through real API + UI | **Verified** | `capabilities.test.ts` (3) + `runtime.test.ts` + `SettingsPanel`/`CapabilityRegistry`. |
@@ -142,12 +142,12 @@ sandbox. "N/A (definitional)" rows are narrative/definitional and carry no runti
 | 75 | Updated Prototype 0 Requirements | Verified | Streaming/tools/onboarding delivered. |
 | 76 | Architectural Refinement | N/A (definitional) | Architecture reference. |
 | 77 | Local AI Engine Runtime | Verified | llama.cpp CPU inference; `engine.test.ts`. |
-| 78 | Tokenization and Runtime Compatibility | Partial | ChatML reference adapter; generalized tokenizer interface present, one concrete adapter. |
+| 78 | Tokenization and Runtime Compatibility | Partial | Five framing adapters registered; only the Qwen reference tokenizer/model is execution-verified. |
 | 79 | Local Inference Limits Versus Provider Quotas | Verified | Local limits independent of quotas; `engine.test.ts`, `limits.test.ts`. |
 | 80 | Local Context Management | Verified | Bounded context; `engine.test.ts` context bounds. |
 | 81 | Local Model Storage | Verified | Verified GGUF + read-only mount; `engine.test.ts`. |
 | 82 | Local AI Engine Resource Model | Verified | Reservation + admission; `engine.test.ts`. |
-| 83 | Accelerator Abstraction | Partial | Inventory + compatibility logic (`hardware.test.ts`); Linux Vulkan path authored and admission-tested; real GPU verification remains open. |
+| 83 | Accelerator Abstraction | Partial | Inventory + compatibility logic (`hardware.test.ts`); Linux Vulkan/CUDA/ROCm paths authored and admission-tested; real GPU verification remains open. |
 | 84 | Local AI Engine Lifecycle | Verified | Load/health/stop/replace; `engine.test.ts`, `runtime.test.ts`. |
 | 85 | Offline Companion Operation | Verified | Offline namespace, no network; `runtime.test.ts`. |
 | 86 | Engine Independence and Replacement | Verified | Replaceable engine; Home independent of engine; `runtime.test.ts`. |
@@ -176,3 +176,13 @@ Backend descriptors, Linux accelerator admission, explicit CPU fallback reasons,
 framing adapters and containment plans are implemented. See [local AI](local-ai.md) for configuration and limits.
 No GPU execution, non-reference model inference or delegated-cgroup enforcement was verified here.
 Metal/native Windows GPU execution remains disabled; CPU isolation remains required.
+
+## P4 lifecycle completion update — 2026-10-06
+
+`updates.ts` now exposes the signed HTTPS channel alongside staged activation and rollback.
+Existing encrypted migration/source retirement and recovery UI remain in place.
+`anchor.ts` compares externally retained signed checkpoints against current journal history.
+`identity.ts` adds optional single-use administrator proofs and a Linux TPM signing helper,
+combinable with TOTP. See [identity setup](admin-identity.md).
+Real TPM/keyring verification, Secure Enclave/native Windows TPM, remote attestation,
+hardware anti-cloning/anti-rollback and production signing/distribution remain outstanding.

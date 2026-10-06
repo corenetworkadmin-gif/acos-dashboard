@@ -6,7 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Header, TopBar } from "./Header";
 import { navigation } from "@/lib/navigation";
 import { InterlockBanner } from "./AdminInterlockStatus";
-import { login, refresh, useConnection } from "@/runtime/store";
+import {
+  login,
+  identityChallenge,
+  refresh,
+  useConnection,
+} from "@/runtime/store";
 const descriptions: Record<string, string> = {
   "/": "Your companion’s world, at a glance.",
   "/companion": "A conversation that stays close to home.",
@@ -22,6 +27,8 @@ export default function Workspace() {
   const connection = useConnection();
   const location = useLocation();
   const [key, setKey] = useState("");
+  const [challenge, setChallenge] = useState("");
+  const [signature, setSignature] = useState("");
   const [otp, setOtp] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -58,7 +65,9 @@ export default function Workspace() {
                   setBusy(true);
                   setError("");
                   try {
-                    await login(key, otp);
+                    await login(key, otp, challenge, signature);
+                    setChallenge("");
+                    setSignature("");
                     setOtp("");
                     setKey("");
                   } catch (e) {
@@ -99,6 +108,60 @@ export default function Workspace() {
                   onChange={(event) => setOtp(event.target.value)}
                   className="mb-4 mt-2"
                 />
+                <details className="mb-4 rounded border p-3">
+                  <summary className="cursor-pointer text-xs">
+                    Hardware identity (if configured)
+                  </summary>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="my-3"
+                    disabled={busy || !key}
+                    onClick={async () => {
+                      setBusy(true);
+                      setError("");
+                      setSignature("");
+                      try {
+                        setChallenge((await identityChallenge(key)).challenge);
+                      } catch (e) {
+                        setError((e as Error).message);
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    Get signing challenge
+                  </Button>
+                  {challenge && (
+                    <>
+                      <label
+                        htmlFor="identity-challenge"
+                        className="block text-xs"
+                      >
+                        Sign this challenge with your configured device within
+                        two minutes.
+                      </label>
+                      <textarea
+                        id="identity-challenge"
+                        readOnly
+                        value={challenge}
+                        className="my-2 w-full rounded border p-2 text-xs"
+                      />
+                      <label
+                        htmlFor="identity-signature"
+                        className="block text-xs"
+                      >
+                        Device signature
+                      </label>
+                      <textarea
+                        id="identity-signature"
+                        value={signature}
+                        onChange={(e) => setSignature(e.target.value.trim())}
+                        className="my-2 w-full rounded border p-2 text-xs"
+                      />
+                    </>
+                  )}
+                </details>
                 {error && (
                   <p role="alert" className="mt-4 text-xs text-red-600">
                     {error}

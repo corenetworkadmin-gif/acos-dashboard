@@ -72,7 +72,7 @@ The dashboard is local administration software. Do not expose the Vite developme
 - An allowlisted contract mediates `chat.send`, `home.read`, and `home.write`. Actual Home is SQLite state, not arbitrary host filesystem access.
 - Every companion operation records identity, target, policy version, transitions, result/failure/cancellation, and resource release. SQLite transactions commit state and hash-linked audit entries together. Startup verifies the chain and reconciles interrupted operations.
 - Opening administrator controls blocks admission before cancelling and waiting for inference. Emergency isolation terminates the process group independently of model output. Releasing it requires a separate resume.
-- Inference uses `bwrap --unshare-all`, dropped capabilities, empty environment, read-only engine/model/system libraries, a 64 MB temporary filesystem, and no mounted host Home, credentials, or `/proc`. `prlimit` bounds virtual address space, aggregate process CPU time, stack size, file sizes, descriptors, and core dumps. CPU allowance scales with workers; no UID-wide process-count limit is imposed. Per-job physical-memory and process-count containment remain unimplemented. A wall timeout and output-size cap terminate failed execution.
+- Inference uses `bwrap --unshare-all`, dropped capabilities, empty environment, read-only engine/model/system libraries, a 64 MB temporary filesystem, and no mounted host Home, credentials, or `/proc`. `prlimit` bounds virtual address space, aggregate process CPU time, stack size, file sizes, descriptors, and core dumps. CPU allowance scales with workers; no UID-wide process-count limit is imposed. Optional delegated cgroup v2 adds per-job physical-memory and task limits; real kernel enforcement verification remains outstanding. A wall timeout and output-size cap terminate failed execution.
 - Model text is never executed as shell, code, or tools. Network, microphone, camera, and remote-execution capabilities run through a default-deny governed provider registry: nothing is attached or enabled until an administrator attaches a provider *and* enables the capability. The network provider is real and target-constrained (exact-host allowlist, private-address refusal, DNS-rebinding re-check); the microphone, camera and remote-execution providers ship as bridge/transport contracts and stay unavailable until a component is supplied. No financial, replication, or propagation capability exists.
 - The administrator and host OS remain trusted. The hash-linked audit is detectable-corruption evidence, not a signature against a malicious root/admin. This is not a hostile multi-user security certification, encrypted storage, or hardware-backed key management.
 
@@ -130,3 +130,13 @@ Backend descriptors, Linux accelerator admission, explicit CPU fallback reasons,
 framing adapters and containment plans are implemented. See [local AI](docs/local-ai.md) for configuration and limits.
 No GPU execution, non-reference model inference or delegated-cgroup enforcement was verified here.
 Metal/native Windows GPU execution remains disabled; CPU isolation remains required.
+
+## P4 lifecycle completion update — 2026-10-06
+
+`updates.ts` now exposes the signed HTTPS channel alongside staged activation and rollback.
+Existing encrypted migration/source retirement and recovery UI remain in place.
+`anchor.ts` compares externally retained signed checkpoints against current journal history.
+`identity.ts` adds optional single-use administrator proofs and a Linux TPM signing helper,
+combinable with TOTP. See [identity setup](docs/admin-identity.md).
+Real TPM/keyring verification, Secure Enclave/native Windows TPM, remote attestation,
+hardware anti-cloning/anti-rollback and production signing/distribution remain outstanding.

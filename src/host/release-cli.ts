@@ -1,3 +1,4 @@
+import { verifyCheckpoint } from "./anchor.ts";
 import { readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import {
@@ -5,7 +6,7 @@ import {
   verifyArtifact,
   verifyRelease,
 } from "./releases.ts";
-import { signPayload, verifyPayload } from "./trust.ts";
+import { signPayload } from "./trust.ts";
 
 // Explicit file-based tooling. Never accepts signing material in process argv.
 async function main() {
@@ -53,14 +54,10 @@ async function main() {
     return;
   }
   if (mode === "audit" && input && artifact) {
-    const { publicKey: _untrusted, ...envelope } = JSON.parse(
-      readFileSync(input, "utf8"),
+    const payload = verifyCheckpoint(
+      JSON.parse(readFileSync(input, "utf8")),
+      readFileSync(artifact, "utf8"),
     );
-    const payload = JSON.parse(
-      verifyPayload(envelope, readFileSync(artifact, "utf8")),
-    );
-    if (payload.purpose !== "acos-audit-anchor-v1")
-      throw new Error("Not an audit checkpoint.");
     console.log(JSON.stringify(payload, null, 2));
     return;
   }

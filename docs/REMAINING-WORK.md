@@ -72,10 +72,12 @@ pnpm install:linux                # per-user launcher + desktop entry
     source retirement before ticket release, restart persistence and single-use offers. This trusts
     host administrators; hardware anti-cloning/anti-rollback protection is still outstanding.
 13. **Recovery UI and signed audit checkpoints implemented.** Companion backup/restore preserves
-    current policy and the journal. Checkpoints require independent external retention; a managed
+    current policy and the journal. Checkpoints support comparison with the current journal and require independent external retention; a managed
     anchoring service and full-installation disaster recovery are not supplied.
-14. **TOTP and Linux Secret Service integration implemented.** TPM/Secure Enclave identity and
-    hardware-protected storage remain open. Secret Service requires verification in a real session.
+14. **TOTP, optional TPM login proof and Linux Secret Service integration implemented.**
+    Linux TPM provisioning/execution and real Secret Service verification remain required.
+    Secure Enclave/native Windows TPM adapters, remote attestation and hardware anti-rollback
+    remain open; see `admin-identity.md`.
 
 See [implementation update](desktop-completion.md), [lifecycle trust](lifecycle-trust.md),
 [release procedures](desktop-releases.md) and [compute configuration](desktop-compute.md).
@@ -99,5 +101,5 @@ See [implementation update](desktop-completion.md), [lifecycle trust](lifecycle-
 
 ## Current green baseline (do not break)
 
-`pnpm typecheck` clean · `pnpm test` 144/144 · `pnpm test:launch` 2/2 · `pnpm lint` 0 errors ·
+`pnpm typecheck` clean · `pnpm test` 147/147 · `pnpm test:launch` 2/2 · `pnpm lint` 0 errors ·
 `pnpm build` succeeds.

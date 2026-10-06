@@ -46,6 +46,11 @@ test("backup restoration keeps revoked authority, rejects tampering and cross-ho
     assert.throws(() => other.restoreBackup(backup, true), /integrity/);
     const anchor = runtime.exportAuditAnchor();
     const { publicKey, ...envelope } = anchor;
+    assert.equal(runtime.verifyAuditAnchor(anchor, publicKey).verified, true);
+    assert.throws(
+      () => other.verifyAuditAnchor(anchor, publicKey),
+      /rollback|diverges|different companion/,
+    );
     const verified = JSON.parse(verifyPayload(envelope, publicKey));
     assert.equal(verified.purpose, "acos-audit-anchor-v1");
     assert.ok(verified.sequence > 0);

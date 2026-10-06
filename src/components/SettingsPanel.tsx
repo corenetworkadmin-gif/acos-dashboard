@@ -94,9 +94,10 @@ export default function SettingsPanel() {
           </div>
         </div>
         <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-          The key lives beside the database with owner-only permissions. If it
-          is lost, sealed data cannot be recovered; if it is tampered with, ACOS
-          refuses to start rather than serve unverified memory.
+          The host stores the key in its configured file or desktop keystore.
+          Preserve that key separately: losing it makes sealed data
+          unrecoverable. ACOS refuses startup when storage integrity cannot be
+          verified.
         </p>
         <div className="mt-4">
           <ActionButton

@@ -5,12 +5,12 @@ adds the following P2/P4/P5 work, preserving their existing verification limitat
 
 ## Added
 
-- Registered Qwen/ChatML and Llama 3 prompt adapters, including mediated tool-result
-  framing. Non-reference model configuration requires an explicit adapter; tokenizer
+- Registered Qwen/ChatML, Llama 3, Mistral, Gemma and Phi prompt adapters, including mediated tool-result
+  framing. Unknown model filenames require an explicit family; tokenizer
   loading stays inside the isolated llama.cpp process. The UI lists supported adapters.
 - A Linux Vulkan path using one explicitly configured DRM render node, an isolated
   engine device probe and discovered free-VRAM admission. `auto` falls back to CPU
-  before inference when the accelerator is unavailable. No CUDA/NPU execution claim.
+  before inference when the accelerator is unavailable. The registry also has Linux CUDA/ROCm paths; no GPU execution verification or NPU claim.
 - Optional delegated cgroup v2 memory, swap and task limits applied before the provider
   starts; descendants inherit the job, cancellation kills it, and stale jobs are reaped.
   Cleanup failure prevents further inference. `ACOS_REQUIRE_CGROUP=1` requires it.
@@ -38,8 +38,8 @@ See [lifecycle trust](lifecycle-trust.md), [desktop releases](desktop-releases.m
   no render device; its populated root cgroup refuses controller delegation with EBUSY.
 - Verify non-reference model families with actual GGUF files. The pinned Qwen CPU model
   was exercised; pure adapter tests do not validate a Llama model or every tokenizer.
-- Verify Secret Service in a real unlocked desktop session. TPM/Secure Enclave identities
-  and hardware-protected monotonic anti-rollback remain unimplemented. Software migration
+- Verify Secret Service in a real unlocked desktop session. The optional Linux TPM login helper requires target verification; Secure Enclave/native Windows
+  TPM and hardware-protected monotonic anti-rollback remain unimplemented. Software migration
   assumes trusted host administrators and cannot prevent an administrator cloning disks.
 - P1 target-platform verification remains outstanding here. The desktop scope decision
   does not independently approve WSL2 as the Windows product runtime.

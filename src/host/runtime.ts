@@ -1,3 +1,4 @@
+import { compareCheckpoint } from "./anchor.ts";
 import { backendRegistry } from "./backends.ts";
 import { loadStorageKey } from "./storage-key.ts";
 import {
@@ -1020,6 +1021,25 @@ export class HostRuntime {
     });
     this.save("Signed audit checkpoint exported for independent retention.");
     return { ...anchor, publicKey: this.identity.publicKey };
+  }
+  verifyAuditAnchor(checkpoint: unknown, pinnedKey: string) {
+    this.requireAdmin();
+    this.requireIdle();
+    if (!this.verifyStorage().ok)
+      throw new Error("Current audit/storage integrity failed.");
+    const tip = this.db
+      .prepare("SELECT id FROM audit ORDER BY id DESC LIMIT 1")
+      .get();
+    return compareCheckpoint(checkpoint, pinnedKey, {
+      companion: this.state.companion.id,
+      sequence: Number(tip?.id ?? 0),
+      hashAt: (sequence) => {
+        const row = this.db
+          .prepare("SELECT hash FROM audit WHERE id=?")
+          .get(sequence);
+        return row ? String(row.hash) : null;
+      },
+    });
   }
   private requireAdmin() {
     if (!this.state.adminOpen || this.stopping || this.retired)
