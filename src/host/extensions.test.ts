@@ -51,8 +51,18 @@ test("installing an extension grants nothing and records requested capabilities 
   // The structural guarantee: no authority is ever granted by installation.
   assert.deepEqual(report.grants, []);
   assert.deepEqual(report.requests, [
-    { capability: "network.request", known: true, enabled: false, attached: false },
-    { capability: "unknown.capability", known: false, enabled: false, attached: false },
+    {
+      capability: "network.request",
+      known: true,
+      enabled: false,
+      attached: false,
+    },
+    {
+      capability: "unknown.capability",
+      known: false,
+      enabled: false,
+      attached: false,
+    },
   ]);
   assert.deepEqual(report.tools, ["network.request"]);
   assert.equal(registry.list().length, 1);
@@ -81,7 +91,10 @@ test("an extension requesting an already-enabled capability still changes nothin
 
 test("remove deletes an installed extension and reports whether it existed", () => {
   const registry = new ExtensionRegistry();
-  registry.install({ id: "acme.tools", name: "Acme Tools", version: "1.0.0" }, facts());
+  registry.install(
+    { id: "acme.tools", name: "Acme Tools", version: "1.0.0" },
+    facts(),
+  );
   assert.equal(registry.remove("acme.tools"), true);
   assert.equal(registry.remove("acme.tools"), false);
   assert.equal(registry.list().length, 0);
@@ -104,4 +117,42 @@ test("detectEscalation reports no change for an inert install and flags real esc
   assert.deepEqual(detectEscalation(before, attached), [
     "network.request: provider attached by extension",
   ]);
+});
+
+test("signed installation uses a pinned signer and still grants nothing", async () => {
+  const { generateKeyPairSync } = await import("node:crypto");
+  const { signPayload } = await import("./trust.ts");
+  const keys = generateKeyPairSync("ed25519");
+  const privateKey = keys.privateKey
+    .export({ format: "pem", type: "pkcs8" })
+    .toString();
+  const publicKey = keys.publicKey
+    .export({ format: "pem", type: "spki" })
+    .toString();
+  const signed = signPayload(
+    JSON.stringify({
+      purpose: "acos-extension-v1",
+      manifest: {
+        id: "signed-test",
+        name: "Test",
+        version: "1",
+        requests: ["network.request"],
+      },
+    }),
+    privateKey,
+  );
+  const registry = new ExtensionRegistry();
+  assert.deepEqual(
+    registry.installSigned(signed, publicKey, facts()).grants,
+    [],
+  );
+  assert.throws(
+    () =>
+      registry.installSigned(
+        { ...signed, payload: signed.payload.replace("Test", "Evil") },
+        publicKey,
+        facts(),
+      ),
+    /Signature/,
+  );
 });

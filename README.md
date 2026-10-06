@@ -1,5 +1,9 @@
 # ACOS — Companion Workspace
 
+[Desktop implementation update](docs/desktop-completion.md) · [Signed releases](docs/desktop-releases.md) · [Recovery and trust](docs/lifecycle-trust.md) · [Support](SUPPORT.md)
+
+[Screenshot: recovery and migration controls](docs/screenshots/settings.png)
+
 [Testing guide](docs/testing.md) · [Resource-limit audit](docs/resource-limits.md) · [MIT license](LICENSE)
 
 A working React dashboard and a Linux host runtime for **one companion**, with real offline CPU inference, durable Home storage, explicit capabilities, an administrator interlock, and correlated operation audit.

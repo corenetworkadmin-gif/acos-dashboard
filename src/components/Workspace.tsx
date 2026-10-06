@@ -22,6 +22,7 @@ export default function Workspace() {
   const connection = useConnection();
   const location = useLocation();
   const [key, setKey] = useState("");
+  const [otp, setOtp] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
@@ -57,7 +58,8 @@ export default function Workspace() {
                   setBusy(true);
                   setError("");
                   try {
-                    await login(key);
+                    await login(key, otp);
+                    setOtp("");
                     setKey("");
                   } catch (e) {
                     setError((e as Error).message);
@@ -85,6 +87,18 @@ export default function Workspace() {
                 >
                   {busy ? "Unlocking…" : "Unlock workspace"}
                 </Button>
+                <label htmlFor="host-otp" className="text-xs font-medium">
+                  Authenticator code (if enabled)
+                </label>
+                <Input
+                  id="host-otp"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={otp}
+                  onChange={(event) => setOtp(event.target.value)}
+                  className="mb-4 mt-2"
+                />
                 {error && (
                   <p role="alert" className="mt-4 text-xs text-red-600">
                     {error}

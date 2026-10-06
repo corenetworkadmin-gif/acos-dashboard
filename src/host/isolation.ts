@@ -1,3 +1,4 @@
+import { renderDevice } from "./accelerator.ts";
 // Platform isolation adapters (architecture: isolation is a separate layer from
 // hardware discovery and from AI-engine support).
 //
@@ -19,7 +20,7 @@
 
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { release } from "node:os";
 import path from "node:path";
 import { executionLimits } from "./limits.ts";
@@ -48,6 +49,7 @@ export interface WrapInput {
   readOnlyPaths: ReadOnlyMount[];
   // Host paths exposed writable inside the sandbox (scratch only).
   writablePaths: string[];
+  renderNode?: string;
   // Extra environment variables the confined program needs (e.g. LD_LIBRARY_PATH).
   env: Record<string, string>;
   // Working directory inside the sandbox.
@@ -122,9 +124,21 @@ export class LinuxIsolationAdapter implements IsolationAdapter {
   wrap(input: WrapInput): WrappedCommand {
     const limits = executionLimits(input.limits, input.limits.threads);
     const mounts: string[] = [];
+    if (input.renderNode) {
+      renderDevice(input.renderNode);
+      mounts.push("--dev-bind", input.renderNode, input.renderNode);
+      // Driver discovery only; no writable sysfs or other device nodes.
+      const deviceSysPath = realpathSync(
+        `/sys/class/drm/${path.basename(input.renderNode)}/device`,
+      );
+      mounts.push("--ro-bind", deviceSysPath, deviceSysPath);
+      if (existsSync("/etc/vulkan/icd.d"))
+        mounts.push("--ro-bind", "/etc/vulkan/icd.d", "/etc/vulkan/icd.d");
+    }
     for (const mount of input.readOnlyPaths)
       mounts.push("--ro-bind", mount.source, mount.target);
-    for (const target of input.writablePaths) mounts.push("--bind", target, target);
+    for (const target of input.writablePaths)
+      mounts.push("--bind", target, target);
     for (const [key, value] of Object.entries(input.env))
       mounts.push("--setenv", key, value);
     if (input.workdir) mounts.push("--chdir", input.workdir);
@@ -189,8 +203,7 @@ export interface WindowsJobLimits {
 export function windowsJobLimits(limits: IsolationLimits): WindowsJobLimits {
   const memory = limits.memoryBytes;
   const addressSpace =
-    limits.addressSpaceBytes ??
-    Math.max(2 * memory, memory + 256 * 1024 ** 2);
+    limits.addressSpaceBytes ?? Math.max(2 * memory, memory + 256 * 1024 ** 2);
   const share =
     limits.logicalThreads && limits.logicalThreads > 0
       ? limits.threads / limits.logicalThreads
@@ -216,6 +229,7 @@ export interface WindowsJobSpec {
   command: string[];
   readOnlyPaths: ReadOnlyMount[];
   writablePaths: string[];
+  renderNode?: string;
   workdir: string | null;
   env: Record<string, string>;
   limits: WindowsJobLimits;

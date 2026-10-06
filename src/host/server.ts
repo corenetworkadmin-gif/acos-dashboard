@@ -1,3 +1,4 @@
+import { TotpGate } from "./mfa.ts";
 import {
   createServer,
   type IncomingMessage,
@@ -10,6 +11,7 @@ import {
   mkdirSync,
   readFileSync,
   writeFileSync,
+  statSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -19,6 +21,33 @@ import { HostRuntime, envelope, samplePackage } from "./runtime.ts";
 import { engineConfig, LocalEngine } from "./engine.ts";
 
 const commandSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("migrationOffer") }).strict(),
+  z.object({ type: z.literal("migrationTicket") }).strict(),
+  z
+    .object({
+      type: z.literal("retireForMigration"),
+      offer: z.unknown(),
+      destinationKey: z.string().max(200),
+      confirm: z.boolean(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("acceptMigration"),
+      ticket: z.unknown(),
+      sourceKey: z.string().max(200),
+      confirm: z.boolean(),
+    })
+    .strict(),
+  z.object({ type: z.literal("exportBackup") }).strict(),
+  z.object({ type: z.literal("exportAuditAnchor") }).strict(),
+  z
+    .object({
+      type: z.literal("restoreBackup"),
+      backup: z.unknown(),
+      confirm: z.boolean(),
+    })
+    .strict(),
   z.object({ type: z.literal("openAdmin") }).strict(),
   z.object({ type: z.literal("closeAdmin") }).strict(),
   z.object({ type: z.literal("isolate") }).strict(),
@@ -49,7 +78,9 @@ const commandSchema = z.discriminatedUnion("type", [
       enabled: z.boolean(),
     })
     .strict(),
-  z.object({ type: z.literal("removeScheduled"), id: z.string().max(64) }).strict(),
+  z
+    .object({ type: z.literal("removeScheduled"), id: z.string().max(64) })
+    .strict(),
   z
     .object({
       type: z.literal("emitEvent"),
@@ -142,7 +173,11 @@ async function body(req: IncomingMessage) {
 const equal = (a: string, b: string) =>
   Buffer.byteLength(a) === Buffer.byteLength(b) &&
   timingSafeEqual(Buffer.from(a), Buffer.from(b));
-export function createHostServer(runtime: HostRuntime, key: string) {
+export function createHostServer(
+  runtime: HostRuntime,
+  key: string,
+  mfa?: TotpGate,
+) {
   let session: { token: string; expires: number } | null = null;
   let attempts = 0,
     retryAt = 0;
@@ -183,15 +218,23 @@ export function createHostServer(runtime: HostRuntime, key: string) {
               error: "Too many attempts. Try again in a minute.",
             });
           const credentials = z
-            .object({ key: z.string().max(128) })
+            .object({
+              key: z.string().max(128),
+              otp: z.string().max(6).optional(),
+            })
             .strict()
             .parse(await body(req));
-          if (!equal(credentials.key, key)) {
+          if (
+            !equal(credentials.key, key) ||
+            (mfa && !mfa.verify(credentials.otp ?? ""))
+          ) {
             if (++attempts >= 5) {
               retryAt = Date.now() + 60_000;
               attempts = 0;
             }
-            return send(401, { error: "Invalid administrator key" });
+            return send(401, {
+              error: "Invalid administrator key or verification code",
+            });
           }
           if (session) await runtime.sessionExpired();
           attempts = 0;
@@ -204,6 +247,41 @@ export function createHostServer(runtime: HostRuntime, key: string) {
             `acos_session=${session.token}; HttpOnly; SameSite=Strict; Path=/api; Max-Age=28800`,
           );
           return send(200, { success: true });
+        }
+        // Packaged desktop releases serve only their immutable built UI. The
+        // API below retains exactly the same authentication and origin checks.
+        if (
+          req.method === "GET" &&
+          !req.url?.startsWith("/api") &&
+          process.env.ACOS_WEB_ROOT
+        ) {
+          const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+          const asset =
+            /^\/assets\/[a-zA-Z0-9_.-]+\.(js|css|svg|png|woff2)$/.test(
+              pathname,
+            );
+          if (pathname.startsWith("/assets/") && !asset)
+            return send(404, { error: "Asset not found" });
+          const file = path.join(
+            process.env.ACOS_WEB_ROOT,
+            asset ? pathname.slice(1) : "index.html",
+          );
+          if (!existsSync(file) || !statSync(file).isFile())
+            return send(404, { error: "Asset not found" });
+          const mime: Record<string, string> = {
+            ".js": "text/javascript",
+            ".css": "text/css",
+            ".svg": "image/svg+xml",
+            ".png": "image/png",
+            ".woff2": "font/woff2",
+            ".html": "text/html",
+          };
+          res.setHeader(
+            "Content-Type",
+            mime[path.extname(file)] ?? "application/octet-stream",
+          );
+          res.end(readFileSync(file));
+          return;
         }
         const token =
           req.headers.cookie
@@ -270,7 +348,8 @@ export function createHostServer(runtime: HostRuntime, key: string) {
           try {
             if (request.tools) {
               await runtime.runChatWithTools(request.input, (event) => {
-                if (event.type === "token") write("token", { text: event.text });
+                if (event.type === "token")
+                  write("token", { text: event.text });
                 else if (event.type === "tool")
                   write("tool", {
                     name: event.name,
@@ -318,6 +397,35 @@ export function createHostServer(runtime: HostRuntime, key: string) {
           });
         let result: unknown;
         switch (command.type) {
+          case "migrationOffer":
+            result = runtime.migrationOffer();
+            break;
+          case "migrationTicket":
+            result = runtime.migrationTicket();
+            break;
+          case "retireForMigration":
+            result = runtime.retireForMigration(
+              command.offer,
+              command.destinationKey,
+              command.confirm,
+            );
+            break;
+          case "acceptMigration":
+            result = runtime.acceptMigration(
+              command.ticket,
+              command.sourceKey,
+              command.confirm,
+            );
+            break;
+          case "exportBackup":
+            result = runtime.exportBackup();
+            break;
+          case "restoreBackup":
+            result = runtime.restoreBackup(command.backup, command.confirm);
+            break;
+          case "exportAuditAnchor":
+            result = runtime.exportAuditAnchor();
+            break;
           case "openAdmin":
             result = await runtime.openAdmin();
             break;
@@ -469,6 +577,9 @@ if (
   const server = createHostServer(
     runtime,
     readFileSync(keyPath, "utf8").trim(),
+    process.env.ACOS_MFA_FILE
+      ? new TotpGate(process.env.ACOS_MFA_FILE)
+      : undefined,
   );
   server.requestTimeout = 150_000;
   server.listen(Number(process.env.ACOS_PORT ?? 4317), "127.0.0.1", () =>

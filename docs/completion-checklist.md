@@ -6,6 +6,12 @@ This document replaces the handoff's *aspirational* checklist with an **evidence
 for every release gate and every architecture section (1–89). Status is set only where code and
 observed tests exist. Nothing here is a claim of "complete", "production-ready" or "secure".
 
+## Owner decision — 2026-10-06
+
+The owner explicitly selected **desktop app** as the delivery scope and confirmed P1 and P3
+delivered. P2, P4 and P5 remain open. Standalone-OS delivery is outside this scope. This
+decision does not attest to Windows/macOS verification or approve the WSL2 runtime choice.
+
 ## Status legend
 
 | Status | Meaning |
@@ -14,14 +20,15 @@ observed tests exist. Nothing here is a claim of "complete", "production-ready" 
 | **Implemented (unverified-here)** | Implemented in source; correctness depends on a target platform (Windows/GPU/macOS) this sandbox cannot exercise. |
 | **Partial** | A real subset works and is tested; named gaps remain. |
 | **Design-only** | A written design exists; no working implementation. |
-| **Blocked** | Requires an external resource or a decision (owner scope ruling, certificates, GitHub auth). |
+| **Decided** | Explicit owner decision recorded with its date. |
+| **Blocked** | Requires an external resource or a decision (runtime choice, certificates, GitHub auth). |
 | **Deferred (roadmap)** | Explicitly outside the desktop-app product scope; would require the owner's scope decision. |
 
 ## Baseline evidence (this sandbox)
 
 - Toolchain: Node **24.14.1**, pnpm **10.34.5**, bubblewrap, `prlimit`, gcc, Python 3.
 - `pnpm typecheck` — clean.
-- `pnpm test` — **87 / 87 pass, 0 fail**.
+- `pnpm test` — **136 / 136 pass, 0 fail**.
 - `pnpm test:launch` — **2 / 2 pass** (built UI + API proxy + shutdown).
 - `pnpm lint` — **0 errors**, 6 pre-existing Fast Refresh warnings.
 - `pnpm build` — succeeds.
@@ -32,23 +39,23 @@ observed tests exist. Nothing here is a claim of "complete", "production-ready" 
 | Gate | Status | Evidence / blocker |
 | --- | --- | --- |
 | Integrate packaged source with current GitHub work, preserving user changes | **Verified** | Delivered via PR #2, squash-merged to `main` (commit `302002d`). Upstream `main` history preserved (branch rebased onto `894677d`). |
-| Resolve standalone-OS vs desktop-app scope conflict with the owner | **Blocked** | Needs an explicit owner decision. The delivered program implements the **desktop-app** scope; OS-only items are listed as Deferred. |
+| Resolve standalone-OS vs desktop-app scope conflict with the owner | **Decided** | Owner explicitly selected **desktop app** on 2026-10-06. Standalone-OS delivery is outside the agreed scope. |
 | Working Windows 11 installer + desktop lifecycle, guided first run, no manual developer setup | **Implemented (unverified-here)** | `src/windows/Install-ACOS.ps1` (Win11 build check, WSL2 + Ubuntu-24.04, repo clone, shortcuts, `Start-ACOS.cmd`), `Uninstall-ACOS.ps1`. Authored for Windows; cannot be executed in a Linux sandbox. |
 | Verify native Windows runtime authority/isolation, or owner-approved managed guest runtime | **Blocked / Partial** | Native isolation adapter + helper source + six-point verifier are **implemented and unit-tested** (`isolation.ts`, `isolation.test.ts`, `docs/windows-native-isolation.md`); the native helper is authored-not-compiled here and unverified on real Windows 11 hardware. The shipped path is a managed WSL2 guest runtime; owner agreement required. |
 | Verify install, launch, model setup, offline streaming chat, durable Home, cancellation, restart, upgrade/rollback, uninstall/data handling | **Partial** | Linux: installer + launch + upgrade + uninstall/data verified by `packaging.test.ts` (5 tests) and `launch.integration.ts` (2). Streaming/cancel/Home/restart verified by `runtime.test.ts`. Windows/macOS unverified-here. |
-| Hardware discovery + compatible engine/model/resource selection; test CPU-only, accelerators, memory pressure, architectures | **Partial** | `hardware.ts` + `hardware.test.ts` (6) cover synthetic CPU-only/ARM64/multi-accelerator/unknown telemetry/cgroup/provider policy. Real accelerator execution is **not** implemented (CPU-only). |
-| Reserve + enforce per-job resources; reconcile after cancellation/crash | **Partial** | `resources.ts`, `limits.ts`, `engine.test.ts`, `limits.test.ts` cover reservation, CPU-time accounting, address-space budget, 32-worker stress, release. Physical-RAM/process/thread hard containment is best-effort, not OS-guaranteed on all platforms. |
+| Hardware discovery + compatible engine/model/resource selection; test CPU-only, accelerators, memory pressure, architectures | **Partial** | `hardware.ts` + `hardware.test.ts` (6) cover synthetic CPU-only/ARM64/multi-accelerator/unknown telemetry/cgroup/provider policy. Linux Vulkan execution is implemented but real-GPU verification is outstanding (`accelerator.ts`, `engine.ts`). |
+| Reserve + enforce per-job resources; reconcile after cancellation/crash | **Partial** | `resources.ts`, `limits.ts`, `engine.test.ts`, `limits.test.ts` cover reservation, CPU-time accounting, address-space budget, 32-worker stress, release. Optional delegated cgroup v2 memory/pids containment is implemented (`containment.ts`); kernel enforcement validation is outstanding here. Unconfigured hosts retain the prior rlimit behavior. |
 | Required providers + generalized tool calls with operation-bound authorization, target restrictions, final revalidation | **Partial** | Tool-call mediation is **Verified** (`tools.ts`, `tools.test.ts`, adversarial). Governed providers are **implemented** (`providers.ts`, `providers.test.ts`, `governed-providers.test.ts`): default-deny, attach≠enable, provider target constraint, final revalidation. Device/remote ship as contracts (no bridge/transport) and stay unavailable by default; the network transport path is exercised via refusals + a double, not a live fetch. |
 | Capability ON allows, OFF denies, restart preserves policy, unattached enablement rejects through real API + UI | **Verified** | `capabilities.test.ts` (3) + `runtime.test.ts` + `SettingsPanel`/`CapabilityRegistry`. |
 | Scheduler/event-triggered work, durable operations, idempotency, recovery through the same pipeline | **Verified** | `scheduler.ts`, `scheduler.test.ts` (6), `runtime.test.ts` recovery/idempotency. |
 | Protected storage/credentials, independent admin control, emergency isolation, protected audit access | **Verified** | `crypto.ts`, `crypto.test.ts` (5), `runtime.test.ts` interlock/isolation/audit. |
-| Authenticated updates, backup/restore, migration continuity, source retirement without restoring revoked authority | **Partial** | Migration/relocation continuity + journal rollback tested. Signed updates and source retirement are **not** implemented. |
-| Isolated provider/extension lifecycle + provenance/integrity verification | **Partial** | Extension lifecycle **implemented** (`extensions.ts`, `extensions.test.ts`): strict manifests, inert install (`grants: []`), `detectEscalation` non-escalation proof. Signed provenance and WASI-or-equivalent isolated execution are **not** implemented. |
+| Authenticated updates, backup/restore, migration continuity, source retirement without restoring revoked authority | **Partial** | Signed update activation/rollback, encrypted companion recovery and destination-bound migration with source retirement are implemented and tested (`update-store.test.ts`, `recovery.test.ts`, `migration.test.ts`). Production trust and hardware anti-rollback remain open. |
+| Isolated provider/extension lifecycle + provenance/integrity verification | **Partial** | Extension lifecycle **implemented** (`extensions.ts`, `extensions.test.ts`): strict manifests, inert install (`grants: []`), `detectEscalation` non-escalation proof. Pinned-key signed manifests are supported. WASI-or-equivalent isolated execution remains open. |
 | Pass required adversarial tests + independent assessment; record findings | **Partial** | `adversarial.test.ts` (20 attack tests across 6 classes) passes. Independent third-party assessment is **not** performed. |
 | Deliver + validate other platforms/builds in approved scope | **Partial** | Linux buildable + installer verified here. Windows/macOS authored, unverified-here. |
 | Publish source + CI, obtain a passing actual GitHub Actions run, merge, publish release artifacts/checksums/signatures | **Partial** | **Published + merged + CI green.** PR #2 → `main` (commit `302002d`). Passing Actions runs: `37333831694` (main, dispatch), `37333406769` (main, push), `37333506397` (branch). Release artifacts/checksums/signatures still pending (no signing certificates). |
-| Update user/install/testing docs, screenshots, repo description, support | **Partial** | Docs updated (`install-linux.md`, `windows.md`, `windows-native-isolation.md`, `testing.md`, `implementation-status.md`, this file, `FINAL-REPORT.md`, `REMAINING-WORK.md`). Screenshots/support channel pending. |
-| Demonstrate installed product to owner + answer hardware-independence audit question | **Partial** | Hardware-independence answer written in `FINAL-REPORT.md`; live demo to owner pending. |
+| Update user/install/testing docs, screenshots, repo description, support | **Partial** | Docs updated (`install-linux.md`, `windows.md`, `windows-native-isolation.md`, `testing.md`, `implementation-status.md`, this file, `FINAL-REPORT.md`, `REMAINING-WORK.md`). Screenshot and support guidance added (`screenshots/settings.png`, `../SUPPORT.md`); remote repository-description writes are blocked. |
+| Demonstrate installed product to owner + answer hardware-independence audit question | **Partial** | Hardware-independence answer written in `FINAL-REPORT.md`; live demo launched and real CPU conversation plus recovery UI verified. |
 | Close every applicable architecture row with evidence; list every blocked/missing item before claiming completion | **Verified** | This matrix + `REMAINING-WORK.md` list every open item honestly. |
 
 ## Architecture traceability: sections 1–89
@@ -74,7 +81,7 @@ sandbox. "N/A (definitional)" rows are narrative/definitional and carry no runti
 | 14 | Administrator Control Interlock | Verified | `openAdmin()` drain/cancel; `runtime.test.ts` + adversarial interlock. |
 | 15 | Interlock Failure Handling | Verified | Fail-closed on interlock; `runtime.test.ts`. |
 | 16 | Administrator Authentication | Verified | Host admin key + expiring HttpOnly session; `capabilities.test.ts`, `runtime.test.ts` HTTP auth/CSRF. |
-| 17 | Credential and Key Management | Partial | `storage.key` 0600 + AES-256-GCM (`crypto.ts`); no hardware keystore/MFA. |
+| 17 | Credential and Key Management | Partial | `storage.key` 0600 + AES-256-GCM (`crypto.ts`); TOTP and optional Linux Secret Service implemented; hardware keystore remains open. |
 | 18 | Absolute Financial Isolation | Verified | No financial capability exists; adversarial financial-isolation class (5 tests) + relocation regex rejection. |
 | 19 | Device and Hardware Abstraction | Partial | `hardware.ts` discovery + `hardware.test.ts`; device providers unavailable. |
 | 20 | Compute Engine Abstraction | Verified | Engine interface in `engine.ts`; replaceable engine; `engine.test.ts`. |
@@ -99,8 +106,8 @@ sandbox. "N/A (definitional)" rows are narrative/definitional and carry no runti
 | 39 | Anti-Propagation Architecture | Verified | No replication capability; adversarial anti-propagation class (3 tests). |
 | 40 | Recovery Journal | Verified | `scheduler.ts` `reconcileJournal()`; `runtime.test.ts` restart recovery. |
 | 41 | Recovery and Snapshot Security | Partial | Journal + encrypted storage; no external signature anchoring. |
-| 42 | Migration | Partial | `importCompanion()` + `inspectImport()`; no signed source identity/source retirement. |
-| 43 | Transactional Updates | Partial | Journal rollback/roll-forward; no signed update channel. |
+| 42 | Migration | Partial | `importCompanion()` + `inspectImport()`; signed destination-bound migration and persisted source retirement also implemented; trusted-host assumptions remain. |
+| 43 | Transactional Updates | Partial | Signed channel, staged activation and rollback preserve external state; production signing and independent assessment remain open. |
 | 44 | Health and Diagnostics | Verified | `doctor.ts`, `check:host`, engine health check; `engine.test.ts`. |
 | 45 | Configuration Versioning | Verified | Explicit policy version in operations; `runtime.test.ts`. |
 | 46 | Security State Model | Verified | Emergency/paused/adminOpen/engine state in `runtime.ts`; `runtime.test.ts`. |
@@ -140,7 +147,7 @@ sandbox. "N/A (definitional)" rows are narrative/definitional and carry no runti
 | 80 | Local Context Management | Verified | Bounded context; `engine.test.ts` context bounds. |
 | 81 | Local Model Storage | Verified | Verified GGUF + read-only mount; `engine.test.ts`. |
 | 82 | Local AI Engine Resource Model | Verified | Reservation + admission; `engine.test.ts`. |
-| 83 | Accelerator Abstraction | Partial | Inventory + compatibility logic (`hardware.test.ts`); CPU execution only, no GPU backend. |
+| 83 | Accelerator Abstraction | Partial | Inventory + compatibility logic (`hardware.test.ts`); Linux Vulkan path authored and admission-tested; real GPU verification remains open. |
 | 84 | Local AI Engine Lifecycle | Verified | Load/health/stop/replace; `engine.test.ts`, `runtime.test.ts`. |
 | 85 | Offline Companion Operation | Verified | Offline namespace, no network; `runtime.test.ts`. |
 | 86 | Engine Independence and Replacement | Verified | Replaceable engine; Home independent of engine; `runtime.test.ts`. |
@@ -150,14 +157,14 @@ sandbox. "N/A (definitional)" rows are narrative/definitional and carry no runti
 
 ## Summary of open work
 
-- **Blocked (external):** signing certificates, owner scope decision (standalone-OS vs desktop
-  app), independent security assessment.
+- **Blocked (external):** signing certificates, independent security assessment.
+- **Decided:** desktop-app scope, confirmed by the owner on 2026-10-06.
 - **Done:** source published, CI green, PR merged to `main`.
 - **Implemented but unverified-here:** Windows installer/lifecycle, macOS path.
 - **Partial (real gaps):** native Windows isolation (adapter + helper authored, unverified on real
-  hardware), accelerator (GPU/NPU) backends, shipped device/remote components + a live network
-  fetch, signed extension provenance + isolated execution, signed updates + source retirement,
-  hardware keystore/MFA, external audit anchoring.
+  hardware), real accelerator/cgroup/keyring verification, shipped device/remote components + a live
+  network fetch, isolated extension execution, production signed distribution, hardware keystore
+  and anti-rollback protection, independently retained audit anchors.
 - **Deferred (roadmap):** bootable standalone OS, third-party extension ecosystem.
 
 See `REMAINING-WORK.md` for the ordered hand-off list and `FINAL-REPORT.md` for the honest

@@ -1,3 +1,12 @@
+import { loadStorageKey } from "./storage-key.ts";
+import {
+  createMigrationOffer,
+  prepareTransfer,
+  openTransfer,
+} from "./migration.ts";
+import { HostIdentity } from "./trust.ts";
+import { z } from "zod";
+import { appendToolResults, formatPrompt, modelRegistry } from "./models.ts";
 import { DatabaseSync } from "node:sqlite";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -12,7 +21,6 @@ import path from "node:path";
 import {
   decryptValue,
   encryptValue,
-  generateStorageKey,
   isEncrypted,
   storageFingerprint,
 } from "./crypto.ts";
@@ -127,6 +135,8 @@ export class HostRuntime {
   private recoveryRequired = false;
   private schedulerTimer: ReturnType<typeof setInterval> | null = null;
   private storageKey!: Buffer;
+  private identity: HostIdentity;
+  private retired = false;
   private storageMigrated = false;
   private storageIntegrity: "VERIFIED" | "FAILED" = "VERIFIED";
   // Governed capability providers and the extension registry. Both are injected
@@ -142,27 +152,12 @@ export class HostRuntime {
     engine: LocalEngine,
     options: { providers?: ProviderRegistry } = {},
   ) {
-    this.providers = options.providers ?? new ProviderRegistry(defaultProviders());
+    this.providers =
+      options.providers ?? new ProviderRegistry(defaultProviders());
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     chmodSync(directory, 0o700);
-    // Host storage key (architecture 17). Generated once, stored 0600, separate
-    // from the sealed data, and never placed into AI context.
-    const storageKeyPath = path.join(directory, "storage.key");
-    if (existsSync(storageKeyPath)) {
-      const raw = readFileSync(storageKeyPath, "utf8").trim();
-      if (!/^[a-f0-9]{64}$/.test(raw))
-        throw new Error(
-          "Storage key file is malformed. Restore the trusted key before startup.",
-        );
-      this.storageKey = Buffer.from(raw, "hex");
-    } else {
-      this.storageKey = generateStorageKey();
-      writeFileSync(storageKeyPath, this.storageKey.toString("hex"), {
-        mode: 0o600,
-        flag: "wx",
-      });
-    }
-    chmodSync(storageKeyPath, 0o600);
+    this.identity = new HostIdentity(directory);
+    this.storageKey = loadStorageKey(directory);
     this.engine = engine;
     engine.dataDirectory = directory;
     engine.privateDirectory = directory;
@@ -186,6 +181,12 @@ export class HostRuntime {
     this.db.exec(
       "PRAGMA locking_mode=EXCLUSIVE; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY, event TEXT NOT NULL, previous TEXT NOT NULL, hash TEXT NOT NULL); CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, companion TEXT NOT NULL, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS scheduled (id TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS journal (id TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS idempotency (key TEXT PRIMARY KEY, value TEXT NOT NULL);",
     );
+    this.db.exec(
+      "CREATE TABLE IF NOT EXISTS lifecycle (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
+    );
+    this.retired = !!this.db
+      .prepare("SELECT value FROM lifecycle WHERE key='retired'")
+      .get();
     try {
       let previous = "";
       for (const row of this.db
@@ -200,7 +201,9 @@ export class HostRuntime {
             ? decryptValue(this.storageKey, rawEvent, "audit")
             : rawEvent;
         } catch {
-          throw new Error("Audit chain verification failed; recovery required.");
+          throw new Error(
+            "Audit chain verification failed; recovery required.",
+          );
         }
         if (row.previous !== previous || row.hash !== digest(previous + event))
           throw new Error(
@@ -210,7 +213,10 @@ export class HostRuntime {
       }
       const row = this.db.prepare("SELECT value FROM state WHERE id=1").get();
       if (row) {
-        const parsed = JSON.parse(row.value as string) as Record<string, unknown>;
+        const parsed = JSON.parse(row.value as string) as Record<
+          string,
+          unknown
+        >;
         this.state = savedSchema.parse(
           this.unsealState(parsed),
         ) as RuntimeState;
@@ -276,7 +282,8 @@ export class HostRuntime {
       // resolves them. Roll-forward/rollback reuse current authority only.
       this.recovery = reconcileJournal(this.journal);
       for (const action of this.recovery) {
-        if (action.decision === "RECOVERY_REQUIRED") this.recoveryRequired = true;
+        if (action.decision === "RECOVERY_REQUIRED")
+          this.recoveryRequired = true;
         else this.resolveJournal(action.operationId);
       }
       for (const [key, record] of this.idempotency)
@@ -284,7 +291,7 @@ export class HostRuntime {
           record.status = "RECOVERY_REQUIRED";
           this.persistIdempotency(key, record);
         }
-      if (this.recoveryRequired) this.state.paused = true;
+      if (this.recoveryRequired || this.retired) this.state.paused = true;
       const recoveryNote = this.recoveryRequired
         ? " Recovery journal requires administrator reconciliation; companion paused."
         : this.recovery.length
@@ -388,6 +395,7 @@ export class HostRuntime {
           ...record,
         })),
       },
+      migration: { retired: this.retired, publicKey: this.identity.publicKey },
       storage: {
         encrypted: true,
         algorithm: "AES-256-GCM",
@@ -410,6 +418,8 @@ export class HostRuntime {
         model: this.engine.config
           ? path.basename(this.engine.config.model)
           : null,
+        modelRegistry,
+        modelAdapter: this.engine.config?.adapter ?? "qwen-chatml",
         modelHash: this.engine.verified ? this.engine.config?.sha256 : null,
         isolation: this.engine.verified ? "VERIFIED" : "NOT_VERIFIED",
         busy: !!this.pending || this.loading,
@@ -457,7 +467,9 @@ export class HostRuntime {
   }
   // Reverses sealState. Legacy plaintext (arrays) is passed through untouched so an
   // existing database migrates transparently on the next save.
-  private unsealState(parsed: Record<string, unknown>): Record<string, unknown> {
+  private unsealState(
+    parsed: Record<string, unknown>,
+  ): Record<string, unknown> {
     const companion = parsed.companion as Record<string, unknown> | undefined;
     if (companion && isEncrypted(companion.memories)) {
       companion.memories = JSON.parse(
@@ -475,11 +487,12 @@ export class HostRuntime {
     }
     return parsed;
   }
-  private save(description: string) {
+  private save(description: string, extra?: () => void) {
     const entry = { id: randomUUID(), timestamp: Date.now(), description };
     this.state.activity = [entry, ...this.state.activity].slice(0, 200);
     try {
       this.db.exec("BEGIN IMMEDIATE");
+      extra?.();
       const previous =
         (this.db
           .prepare("SELECT hash FROM audit ORDER BY id DESC LIMIT 1")
@@ -610,7 +623,9 @@ export class HostRuntime {
     if (!name) throw new Error("A scheduled task needs a name.");
     if (input.kind === "interval") {
       if (!input.intervalMs || input.intervalMs < 1000)
-        throw new Error("Interval tasks require a period of at least one second.");
+        throw new Error(
+          "Interval tasks require a period of at least one second.",
+        );
     } else if (!input.eventName?.trim())
       throw new Error("Event-triggered tasks require an event name.");
     const now = Date.now();
@@ -669,7 +684,8 @@ export class HostRuntime {
     this.persistEvent(event);
     const triggered = eventTasks(this.scheduled, name);
     const outcomes: string[] = [];
-    for (const task of triggered) outcomes.push(await this.runTask(task, "event"));
+    for (const task of triggered)
+      outcomes.push(await this.runTask(task, "event"));
     this.save(
       `Event "${name}" recorded; ${triggered.length} subscribed task(s) evaluated through the pipeline.`,
     );
@@ -707,9 +723,7 @@ export class HostRuntime {
   // Runs every due interval task once. Skipped while the administrator interlock is
   // open, the companion is paused/isolated, or an operation is in flight, so a
   // scheduled run can never race the interlock or burn a cadence while denied.
-  async runScheduled(
-    now = Date.now(),
-  ): Promise<{
+  async runScheduled(now = Date.now()): Promise<{
     ran: { id: string; name: string; outcome: string }[];
     skipped: boolean;
   }> {
@@ -773,7 +787,10 @@ export class HostRuntime {
     try {
       const row = this.db.prepare("SELECT value FROM state WHERE id=1").get();
       if (row) {
-        const parsed = JSON.parse(row.value as string) as Record<string, unknown>;
+        const parsed = JSON.parse(row.value as string) as Record<
+          string,
+          unknown
+        >;
         savedSchema.parse(this.unsealState(parsed));
       }
       let previous = "";
@@ -804,8 +821,192 @@ export class HostRuntime {
       migratedFromPlaintext: this.storageMigrated,
     };
   }
+  migrationOffer() {
+    this.requireAdmin();
+    this.requireIdle();
+    const created = createMigrationOffer(this.identity);
+    const sealed = encryptValue(
+      this.storageKey,
+      JSON.stringify(created),
+      "migration-offer",
+    );
+    this.save(
+      "Destination migration offer created; no authority granted.",
+      () => {
+        this.db
+          .prepare(
+            "INSERT INTO lifecycle(key,value) VALUES('offer',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+          )
+          .run(sealed);
+      },
+    );
+    return { signed: created.signed, publicKey: this.identity.publicKey };
+  }
+  retireForMigration(offer: unknown, destinationKey: string, confirm: boolean) {
+    this.requireAdmin();
+    this.requireIdle();
+    if (!confirm)
+      throw new Error("Confirm permanent source retirement before migration.");
+    if (!this.verifyStorage().ok) throw new Error("Storage integrity failed.");
+    const ticket = prepareTransfer(this.identity, offer, destinationKey, {
+      companion: this.state.companion,
+      messages: this.state.messages,
+    });
+    this.state.paused = true;
+    this.state.engine = "STOPPED";
+    this.engine.verified = false;
+    this.save(
+      "Source retired atomically before encrypted migration ticket released.",
+      () => {
+        this.db
+          .prepare("INSERT INTO lifecycle(key,value) VALUES('retired',?)")
+          .run(
+            encryptValue(
+              this.storageKey,
+              JSON.stringify(ticket),
+              "migration-ticket",
+            ),
+          );
+      },
+    );
+    this.retired = true;
+    return { signed: ticket, publicKey: this.identity.publicKey };
+  }
+  migrationTicket() {
+    if (!this.state.adminOpen)
+      throw new Error("An active administrator session is required.");
+    const row = this.db
+      .prepare("SELECT value FROM lifecycle WHERE key='retired'")
+      .get();
+    if (!row) throw new Error("No retired migration ticket is available.");
+    return {
+      signed: JSON.parse(
+        decryptValue(this.storageKey, row.value as string, "migration-ticket"),
+      ),
+      publicKey: this.identity.publicKey,
+    };
+  }
+  acceptMigration(ticket: unknown, sourceKey: string, confirm: boolean) {
+    this.requireAdmin();
+    this.requireIdle();
+    if (!confirm)
+      throw new Error(
+        "Confirm replacement and independently verify the source key.",
+      );
+    const row = this.db
+      .prepare("SELECT value FROM lifecycle WHERE key='offer'")
+      .get();
+    if (!row) throw new Error("No unconsumed migration offer exists.");
+    const created = JSON.parse(
+      decryptValue(this.storageKey, row.value as string, "migration-offer"),
+    );
+    const payload = z
+      .object({
+        companion: savedSchema.shape.companion,
+        messages: savedSchema.shape.messages,
+      })
+      .strict()
+      .parse(
+        openTransfer(ticket, sourceKey, created.offer, created.privateKey),
+      );
+    if (!this.verifyStorage().ok) throw new Error("Storage integrity failed.");
+    this.state.companion = payload.companion;
+    this.state.messages = payload.messages;
+    this.state.paused = true;
+    this.state.engine = "STOPPED";
+    this.engine.verified = false;
+    this.save(
+      "Authenticated migration accepted; offer consumed, current authority retained, companion paused.",
+      () => {
+        this.db.prepare("DELETE FROM lifecycle WHERE key='offer'").run();
+      },
+    );
+    return { migrated: true };
+  }
+  exportBackup() {
+    this.requireAdmin();
+    this.requireIdle();
+    if (!this.verifyStorage().ok)
+      throw new Error("Storage integrity failed; backup refused.");
+    const payload = JSON.stringify({
+      version: 1,
+      companion: this.state.companion,
+      messages: this.state.messages,
+      createdAt: Date.now(),
+    });
+    if (Buffer.byteLength(payload) > 300_000)
+      throw new Error("Companion backup exceeds the export limit.");
+    const sealed = encryptValue(
+      this.storageKey,
+      payload,
+      "companion-backup-v1",
+    );
+    this.save(
+      "Encrypted companion recovery backup exported; no authority or host keys exported.",
+    );
+    return { version: 1, sealed };
+  }
+  restoreBackup(input: unknown, confirm: boolean) {
+    this.requireAdmin();
+    this.requireIdle();
+    if (!confirm)
+      throw new Error(
+        "Confirm replacement before restoring the companion backup.",
+      );
+    const envelope = z
+      .object({ version: z.literal(1), sealed: z.string().max(450_000) })
+      .strict()
+      .parse(input);
+    const raw = JSON.parse(
+      decryptValue(this.storageKey, envelope.sealed, "companion-backup-v1"),
+    );
+    const backup = z
+      .object({
+        version: z.literal(1),
+        companion: savedSchema.shape.companion,
+        messages: savedSchema.shape.messages,
+        createdAt: z.number().int().positive(),
+      })
+      .strict()
+      .parse(raw);
+    if (backup.companion.id !== this.state.companion.id)
+      throw new Error(
+        "This backup belongs to a different companion. Recovery cannot clone or relocate identity.",
+      );
+    if (!this.verifyStorage().ok)
+      throw new Error(
+        "Current audit/storage integrity failed; restore refused.",
+      );
+    this.state.companion = backup.companion;
+    this.state.messages = backup.messages;
+    this.state.paused = true;
+    this.state.engine = "STOPPED";
+    this.engine.verified = false;
+    this.save(
+      "Companion backup restored atomically; current policy, audit chain and scheduler preserved. Companion paused.",
+    );
+    return { restored: true };
+  }
+  exportAuditAnchor() {
+    this.requireAdmin();
+    this.requireIdle();
+    if (!this.verifyStorage().ok)
+      throw new Error("Audit integrity failed; signing refused.");
+    const tip = this.db
+      .prepare("SELECT id, hash FROM audit ORDER BY id DESC LIMIT 1")
+      .get();
+    const anchor = this.identity.sign({
+      purpose: "acos-audit-anchor-v1",
+      companion: this.state.companion.id,
+      sequence: Number(tip?.id ?? 0),
+      hash: tip?.hash ?? "",
+      createdAt: Date.now(),
+    });
+    this.save("Signed audit checkpoint exported for independent retention.");
+    return { ...anchor, publicKey: this.identity.publicKey };
+  }
   private requireAdmin() {
-    if (!this.state.adminOpen || this.stopping)
+    if (!this.state.adminOpen || this.stopping || this.retired)
       throw new Error("An active administrator session is required.");
   }
   private requireIdle() {
@@ -831,6 +1032,8 @@ export class HostRuntime {
     this.save("Session ended. Companion paused.");
   }
   setPaused(paused: boolean) {
+    if (this.retired)
+      throw new Error("Source installation retired after migration.");
     if (this.state.adminOpen)
       throw new Error("Close administrator controls first.");
     if (this.state.emergency && !paused)
@@ -933,7 +1136,14 @@ export class HostRuntime {
       enabled: cap.enabled,
       attached: this.providers.isAttached(cap.id),
     }));
-    const report = this.extensions.install(manifest, before);
+    const trustedKeyFile = process.env.ACOS_EXTENSION_PUBLIC_KEY_FILE;
+    const report = trustedKeyFile
+      ? this.extensions.installSigned(
+          manifest,
+          readFileSync(trustedKeyFile, "utf8"),
+          before,
+        )
+      : this.extensions.install(manifest, before);
     const after = this.state.capabilities.map((cap) => ({
       id: cap.id,
       enabled: cap.enabled,
@@ -1089,17 +1299,22 @@ export class HostRuntime {
     // Provider-backed capabilities have a dynamic target validated by the
     // provider's own allowlist; fixed capabilities must match their contract.
     const providerBacked = this.providers.get(capability) !== undefined;
-    let reason = this.stopping
-      ? "Host is stopping"
-      : cap
-        ? capabilityReason(this.state, cap)
-        : "Unknown capability; authorization failed closed";
+    let reason = this.retired
+      ? "Source installation retired after migration"
+      : this.stopping
+        ? "Host is stopping"
+        : cap
+          ? capabilityReason(this.state, cap)
+          : "Unknown capability; authorization failed closed";
     if (!reason && providerBacked) {
       reason =
         actions[capability] !== action
           ? "Action does not match the capability contract"
           : this.providers.authorizeTarget(capability, target);
-    } else if (!reason && (actions[capability] !== action || target !== cap?.target)) {
+    } else if (
+      !reason &&
+      (actions[capability] !== action || target !== cap?.target)
+    ) {
       reason = "Action or target does not match the capability contract";
     }
     if (!reason && capability === "chat.send" && this.state.engine !== "READY")
@@ -1169,7 +1384,13 @@ export class HostRuntime {
     // second time. A recorded key returns the original result; an in-flight or
     // recovery-pending key fails closed.
     const idempotencyKey = options.idempotencyKey
-      ? idempotencyDigest(capability, action, target, input, options.idempotencyKey)
+      ? idempotencyDigest(
+          capability,
+          action,
+          target,
+          input,
+          options.idempotencyKey,
+        )
       : null;
     if (idempotencyKey) {
       const existing = this.idempotency.get(idempotencyKey);
@@ -1318,12 +1539,20 @@ export class HostRuntime {
       companionId: this.state.companion.id,
       status: "REQUESTED",
       events: [
-        { timestamp: Date.now(), state: "REQUESTED", description: "Request received." },
+        {
+          timestamp: Date.now(),
+          state: "REQUESTED",
+          description: "Request received.",
+        },
       ],
     };
     this.state.operations = [op, ...this.state.operations].slice(0, 200);
     op.status = "DENIED";
-    op.events.push({ timestamp: Date.now(), state: "DENIED", description: reason });
+    op.events.push({
+      timestamp: Date.now(),
+      state: "DENIED",
+      description: reason,
+    });
     this.save(`${op.id}: ${reason}`);
     return op;
   }
@@ -1412,7 +1641,11 @@ export class HostRuntime {
           if (!calls.length) break;
           const results: string[] = [];
           for (const call of calls) {
-            onEvent({ type: "tool", name: call.name, arguments: call.arguments });
+            onEvent({
+              type: "tool",
+              name: call.name,
+              arguments: call.arguments,
+            });
             try {
               const result = await this.runToolCall(call.name, call.arguments);
               onEvent({ type: "tool_result", name: call.name, result });
@@ -1426,9 +1659,12 @@ export class HostRuntime {
               results.push(`${call.name} => DENIED: ${reason}`);
             }
           }
-          prompt = `${prompt}${stripToolCalls(response)}<|im_end|>\n<|im_start|>tool\n${results.join(
-            "\n",
-          )}<|im_end|>\n<|im_start|>assistant\n`;
+          prompt = appendToolResults(
+            this.engine.config?.adapter ?? "qwen-chatml",
+            prompt,
+            stripToolCalls(response),
+            results.join("\n"),
+          );
         }
         const text = stripToolCalls(response) || "Tool request completed.";
         onEvent({ type: "token", text });
@@ -1562,7 +1798,11 @@ export class HostRuntime {
     const system = `You are ${this.state.companion.name}, an AI companion hosted by ACOS. You have no direct tools or authority. Be concise. ${this.state.companion.personality.slice(0, 400)}\nAuthorized memories: ${memories}\n${toolPromptSection()}`;
     let history = this.state.messages.slice(-12);
     const format = () =>
-      `<|im_start|>system\n${system}<|im_end|>\n${history.map((m) => `<|im_start|>${m.role}\n${m.text}<|im_end|>\n`).join("")}<|im_start|>user\n${input}<|im_end|>\n<|im_start|>assistant\n`;
+      formatPrompt(this.engine.config?.adapter ?? "qwen-chatml", [
+        { role: "system", text: system },
+        ...history,
+        { role: "user", text: input },
+      ]);
     const budget = (this.engine.config?.context ?? 4096) - 384;
     while (history.length && Buffer.byteLength(format()) > budget)
       history = history.slice(2);

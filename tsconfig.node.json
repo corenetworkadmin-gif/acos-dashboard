@@ -14,5 +14,10 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.config.ts", "src/host/**/*.ts", "src/runtime/model.ts"]
+  "include": [
+    "vite.config.ts",
+    "vite.release.config.ts",
+    "src/host/**/*.ts",
+    "src/runtime/model.ts"
+  ]
 }

@@ -29,7 +29,7 @@ for script in src/host/*.sh; do bash -n "$script"; done
 
 `test:launch` builds the production dashboard before exercising the actual host/UI launcher. `pnpm build` may be used separately when only a build is needed. The suite uses temporary SQLite directories, ephemeral loopback ports, synthetic admin identities and explicit fixture engines. It does not touch your configured companion Home. Existing Fast Refresh warnings in bundled UI files and build deprecation/Browserslist warnings are documented; errors must still fail CI.
 
-Current sandbox result: `pnpm test` **124/124 pass**, `pnpm test:launch` **2/2 pass**, typecheck clean, lint 0 errors, build green. `packaging.test.ts` installs and uninstalls the Linux launcher into a temporary prefix and does not touch your real desktop entries.
+Current sandbox result: `pnpm test` **136/136 pass**, `pnpm test:launch` **2/2 pass**, typecheck clean, lint 0 errors, build green. `packaging.test.ts` installs and uninstalls the Linux launcher into a temporary prefix and does not touch your real desktop entries.
 
 | Tests | Coverage |
 | --- | --- |
@@ -45,7 +45,7 @@ Current sandbox result: `pnpm test` **124/124 pass**, `pnpm test:launch` **2/2 p
 | `packaging.test.ts` | Linux installer installs launcher/entry/icon; idempotent upgrade; uninstall preserves data; purge deletes; refuses root/unknown options; launcher points at the real start script |
 | `launch.integration.ts` | Built UI/API proxy, custom ports, occupied-port refusal, shutdown and released sockets |
 
-A fixture reporting ARM64 or multiple GPUs tests decision logic. It does not prove that an ARM64 binary, Windows installation or GPU backend works. Current production execution is CPU-only.
+A fixture reporting ARM64 or multiple GPUs tests decision logic. It does not prove that an ARM64 binary, Windows installation or GPU backend works. CPU inference is verified here; the Linux Vulkan path requires real hardware verification.
 
 ## Real-model stress test
 
@@ -84,3 +84,5 @@ Use a separate disposable `ACOS_DATA_DIR` for manual testing so your own memorie
 `.github/workflows/ci.yml` runs on pull requests, main/task-branch pushes and manual dispatch. It pins action commits and tool versions, grants read-only repository access, installs only test prerequisites, and runs the required checks above. A manual `real_model` input adds the optional reference download and stress matrix. Namespace failures are errors, not skipped tests. No provider credentials or repository secrets are required.
 
 A locally passing workflow-equivalent command is not a GitHub Actions result. Check the actual run on GitHub after publishing. Native Windows/WSL, ARM64 execution, GPU inference and delegated cgroup containment require their own target environments before being claimed validated.
+
+Desktop update tests cover model adapters, accelerator admission, encrypted recovery, migration retirement/replay, signed releases and rollback, TOTP HTTP unlock/replay and lost-key refusal. See [current limitations](desktop-completion.md).
