@@ -1,7 +1,8 @@
+import { verifyPayload } from "./trust.ts";
 // Extension lifecycle (architecture: extensions may request capabilities and
 // tools, but installing or enabling an extension never grants authority).
 //
-// An extension is data: a signed-in-spirit manifest describing what it would
+// An extension is data: a validated manifest describing what it would
 // *like* to use. The non-escalation guarantee is structural:
 //
 //   * Installing an extension performs no policy change. It cannot attach a
@@ -76,18 +77,23 @@ export class ExtensionRegistry {
 
   // Validates and records a manifest. `capabilities` is the current capability
   // fact set; the returned report shows that installing changed nothing.
-  install(manifestInput: unknown, capabilities: CapabilityFact[]): ExtensionInstallReport {
+  install(
+    manifestInput: unknown,
+    capabilities: CapabilityFact[],
+  ): ExtensionInstallReport {
     const manifest = extensionManifestSchema.parse(manifestInput);
     const byId = new Map(capabilities.map((cap) => [cap.id, cap]));
-    const requests: ExtensionRequestStatus[] = manifest.requests.map((capability) => {
-      const fact = byId.get(capability);
-      return {
-        capability,
-        known: !!fact,
-        enabled: fact?.enabled ?? false,
-        attached: fact?.attached ?? false,
-      };
-    });
+    const requests: ExtensionRequestStatus[] = manifest.requests.map(
+      (capability) => {
+        const fact = byId.get(capability);
+        return {
+          capability,
+          known: !!fact,
+          enabled: fact?.enabled ?? false,
+          attached: fact?.attached ?? false,
+        };
+      },
+    );
     const record: InstalledExtension = {
       id: manifest.id,
       name: manifest.name,
@@ -100,6 +106,23 @@ export class ExtensionRegistry {
     };
     this.installed.set(manifest.id, record);
     return record;
+  }
+
+  installSigned(
+    envelope: unknown,
+    trustedPublicKey: string,
+    capabilities: CapabilityFact[],
+  ) {
+    // The trust anchor is host configuration, never a key supplied by the manifest.
+    const payload = JSON.parse(verifyPayload(envelope, trustedPublicKey));
+    const signed = z
+      .object({
+        purpose: z.literal("acos-extension-v1"),
+        manifest: extensionManifestSchema,
+      })
+      .strict()
+      .parse(payload);
+    return this.install(signed.manifest, capabilities);
   }
 
   remove(id: string): boolean {

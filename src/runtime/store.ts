@@ -48,6 +48,7 @@ export type HostState = Omit<RuntimeState, "capabilities" | "onboarding"> & {
       timestamp: number;
     }[];
   };
+  migration: { retired: boolean; publicKey: string };
   storage: {
     encrypted: boolean;
     algorithm: string;
@@ -60,6 +61,14 @@ export type HostState = Omit<RuntimeState, "capabilities" | "onboarding"> & {
     platform: string;
     model: string | null;
     modelHash: string | null;
+    modelAdapter: string;
+    modelRegistry: {
+      id: string;
+      families: readonly string[];
+      format: string;
+      tokenizer: string;
+      template: string;
+    }[];
     isolation: string;
     busy: boolean;
     contextLimit: number;
@@ -138,8 +147,8 @@ export async function command(
     void refresh();
   }
 }
-export async function login(key: string) {
-  await request("login", { key });
+export async function login(key: string, otp = "") {
+  await request("login", { key, otp });
   await refresh();
 }
 // Streams a chat.send operation over Server-Sent Events. Tokens are delivered to
@@ -202,7 +211,11 @@ export async function streamChat(
     };
     if (event === "token") onToken(parsed.text ?? "");
     else if (event === "done") nextState = parsed.state ?? null;
-    else if (event === "tool" || event === "tool_result" || event === "tool_denied")
+    else if (
+      event === "tool" ||
+      event === "tool_result" ||
+      event === "tool_denied"
+    )
       options?.onTool?.({
         type: event,
         name: parsed.name ?? "unknown",

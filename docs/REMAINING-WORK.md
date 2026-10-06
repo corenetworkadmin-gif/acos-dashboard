@@ -1,8 +1,12 @@
 # ACOS — remaining work (hand-off for the next engineer)
 
-Date: 2026-10-05 (UTC). This is the ordered list of what still needs doing, written so the next
+Updated: 2026-10-06 (UTC). This is the ordered list of what still needs doing, written so the next
 person can pick up without re-deriving context. Companion docs: `FINAL-REPORT.md`,
 `completion-checklist.md`, `implementation-status.md`.
+
+Owner confirmed desktop-app scope on 2026-10-06 and confirmed P1 and P3 delivered.
+P2, P4 and P5 remain open; target-platform verification and P3 hardening remain explicit
+follow-ups. Standalone-OS delivery is outside the agreed scope.
 
 ## How to run what exists
 
@@ -20,32 +24,31 @@ pnpm install:linux                # per-user launcher + desktop entry
 1. **GitHub publish — DONE.** The delivery is published: PR #2 squash-merged to `main`
    (commit `302002d`), CI green (runs `37333831694`, `37333406769`, `37333506397`).
    Remaining sub-item: publish **release artifacts/checksums/signatures** once certificates exist.
-2. **Owner scope decision.** Get an explicit ruling on standalone-OS vs desktop-app scope. The
-   delivered program is the desktop app. Record the decision in `completion-checklist.md`.
+2. **Owner scope decision — DONE (2026-10-06).** The owner explicitly selected a desktop app.
+   Recorded in `completion-checklist.md`. This does not select or approve a Windows runtime model.
 
-## Priority 1 — Windows 11 first delivery
+## Priority 1 — Windows 11 first delivery (delivered; platform verification remains)
 
-3. **Verify `src/windows/Install-ACOS.ps1` on a real Windows 11 machine** (build 22000+). Confirm
-   WSL2 enable, Ubuntu-24.04 install, repo clone, `setup-wsl.sh`, Desktop/Start-Menu shortcuts and
-   `Start-ACOS.cmd` all work end-to-end. Fix anything that fails. This is authored, not verified.
-4. **Decide the Windows runtime model.** Either (a) implement the native isolation adapter
-   described in `docs/windows-native-isolation.md` (AppContainer + Job Objects + WFP + restricted
-   tokens) and verify OS enforcement, or (b) obtain the owner's explicit agreement to ship the
-   managed WSL2 guest runtime and verify that path fully. A desktop window around an unrestricted
-   process does not satisfy the OS-enforcement requirement.
-5. **macOS packaging.** Not started. Build the equivalent installer + desktop lifecycle.
+3. **Windows installer and verifier — delivered.** `src/windows/Install-ACOS.ps1`,
+   `Uninstall-ACOS.ps1` and `verify-windows.ps1` exist. End-to-end Windows 11
+   verification remains unverified in this Linux sandbox; preserve that distinction.
+4. **Windows isolation implementation — delivered.** The platform adapter, native helper
+   source and verifier are present. Native compilation and OS-enforcement verification on
+   Windows remain outstanding. The shipped WSL2 path still requires an explicit runtime
+   choice; desktop-app scope alone does not approve it.
+5. **macOS packaging — delivered.** `src/macos/install-macos.sh` and `docs/macos.md`
+   provide the installer and desktop lifecycle. Target-platform verification remains open.
 
-## Priority 2 — local AI completeness
+## Priority 2 — local AI completeness (implemented paths; hardware validation remains)
 
-6. **GPU/NPU backends.** Implement at least one accelerator backend (Vulkan is the most portable;
-   CUDA for NVIDIA) behind the existing resource abstraction, with per-backend isolation and CPU
-   fallback. Discovery/compatibility logic already exists (`hardware.ts`); only execution is missing.
-   Test on real hardware for each claimed backend.
-7. **Generalized tokenizer / model registry.** Extend beyond the single ChatML reference adapter:
-   a compatibility registry that reports supported model families and tokenizer formats.
-8. **Resource containment.** Move per-job physical-RAM/process/thread limits from best-effort to
-   OS-enforced where the platform supports it (cgroups v2 on Linux, Job Objects on Windows).
-   Reconcile after cancellation/crash and test 32-worker, memory-pressure and timeout paths.
+6. **Vulkan path implemented.** Explicit render-node isolation, isolated backend probe,
+   measured VRAM admission and CPU fallback are present. Verify on actual hardware before
+   claiming support; CUDA/NPU backends are not implemented.
+7. **Model registry implemented.** Qwen/ChatML and Llama 3 GGUF framing are registered.
+   Verify Llama models/tokenizers with real models; only reference Qwen CPU inference was exercised.
+8. **Cgroup containment implemented.** Delegated Linux memory/pids limits, cancellation and
+   orphan reconciliation are present. Real 32-worker, memory-pressure, timeout and crash tests
+   in a delegated subtree remain blocked in this sandbox. Existing rlimit tests still pass.
 
 ## Priority 3 — providers and authority (delivered; hardening remains)
 
@@ -60,23 +63,30 @@ pnpm install:linux                # per-user launcher + desktop entry
     (`grants: []`), and non-escalation is proven structurally (`src/host/extensions.ts`).
     **Remaining:** manifest signing and WASI-or-equivalent isolated execution.
 
-## Priority 4 — lifecycle and trust
+## Priority 4 — lifecycle and trust (software paths delivered; hardware trust remains)
 
-11. **Signed updates.** A signed update channel with integrity/authenticity checks, rollback and
-    preservation of current authority. Recovery-journal rollback already exists.
-12. **Migration with source retirement.** Authenticated source-to-destination migration, identity
-    proofs, source deactivation, anti-replication enforcement, encrypted transfer.
-13. **Backup/restore UI** and **external audit anchoring** (signature anchoring of the hash-linked
-    journal).
-14. **Hardware-backed admin identity** (TPM/Secure Enclave) and MFA; move `storage.key` to a
-    keystore where available.
+11. **Signed updates implemented.** Pinned-key verification, bounded extraction, staged health
+    checks, HTTPS channel downloads and rollback retaining the sequence high-water mark.
+    Production keys, certificates and an owner-controlled distribution endpoint remain required.
+12. **Authenticated migration implemented.** Destination-bound encrypted transfer, signed identities,
+    source retirement before ticket release, restart persistence and single-use offers. This trusts
+    host administrators; hardware anti-cloning/anti-rollback protection is still outstanding.
+13. **Recovery UI and signed audit checkpoints implemented.** Companion backup/restore preserves
+    current policy and the journal. Checkpoints require independent external retention; a managed
+    anchoring service and full-installation disaster recovery are not supplied.
+14. **TOTP and Linux Secret Service integration implemented.** TPM/Secure Enclave identity and
+    hardware-protected storage remain open. Secret Service requires verification in a real session.
+
+See [implementation update](desktop-completion.md), [lifecycle trust](lifecycle-trust.md),
+[release procedures](desktop-releases.md) and [compute configuration](desktop-compute.md).
 
 ## Priority 5 — assurance and release
 
 15. **Independent security assessment.** The adversarial suite is self-authored; a third party must
     review the boundary before any "secure" claim.
 16. **Signing certificates** for binaries and updates; publish release artifacts with checksums.
-17. **Screenshots, support channel, repository description**, and a live demonstration to the owner.
+17. **Screenshots, support guidance and live demo delivered.** See `screenshots/settings.png` and
+    `../SUPPORT.md`. Repository-description writes are blocked by the managed delivery layer.
 
 ## Known-good invariants to preserve (do not regress)
 
@@ -89,5 +99,5 @@ pnpm install:linux                # per-user launcher + desktop entry
 
 ## Current green baseline (do not break)
 
-`pnpm typecheck` clean · `pnpm test` 124/124 · `pnpm test:launch` 2/2 · `pnpm lint` 0 errors ·
+`pnpm typecheck` clean · `pnpm test` 136/136 · `pnpm test:launch` 2/2 · `pnpm lint` 0 errors ·
 `pnpm build` succeeds.

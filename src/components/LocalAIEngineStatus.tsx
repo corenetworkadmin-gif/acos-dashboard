@@ -9,7 +9,7 @@ export default function LocalAIEngineStatus() {
     <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
       <Widget
         title="Local AI engine"
-        description="llama.cpp · GGUF · Qwen / ChatML adapter"
+        description={`llama.cpp · GGUF · ${state.host.modelAdapter}`}
         action={
           <StatusBadge tone={state.engine === "READY" ? "good" : "warning"}>
             {state.host.busy
@@ -100,6 +100,22 @@ export default function LocalAIEngineStatus() {
         </p>
       </Widget>
       <div className="space-y-6">
+        <Widget
+          title="Registered model adapters"
+          description="Choose an adapter in host configuration. Each model must pass its own load and inference checks."
+        >
+          <ul className="space-y-3 text-xs">
+            {state.host.modelRegistry.map((adapter) => (
+              <li key={adapter.id}>
+                <strong>{adapter.id}</strong>
+                <p>
+                  {adapter.families.join(", ")} · {adapter.format} ·{" "}
+                  {adapter.tokenizer}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </Widget>
         <Widget title="Execution boundary">
           <div className="space-y-5">
             {[

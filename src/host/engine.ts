@@ -1,3 +1,6 @@
+import { renderDevice, admitVulkan } from "./accelerator.ts";
+import { JobContainment } from "./containment.ts";
+import { modelAdapter } from "./models.ts";
 import { executionLimits } from "./limits.ts";
 import { discoverHardware } from "./hardware.ts";
 import { cpuProvider, planCompute } from "./resources.ts";
@@ -26,6 +29,9 @@ export interface EngineConfig {
   timeoutMs: number;
   maxThreads?: number;
   backend?: string;
+  adapter?: string;
+  vulkanRenderNode?: string;
+  acceleratorMemoryBytes?: number;
 }
 // Length of the prefix of `text` that is safe to emit without risking a partial
 // trailing occurrence of `marker` (llama.cpp appends "[end of text]").
@@ -34,8 +40,7 @@ export function markerSafeLength(
   marker = "[end of text]",
 ): number {
   let hold = Math.min(marker.length - 1, text.length);
-  while (hold > 0 && !marker.startsWith(text.slice(text.length - hold)))
-    hold--;
+  while (hold > 0 && !marker.startsWith(text.slice(text.length - hold))) hold--;
   return text.length - hold;
 }
 export function engineConfig(): EngineConfig | null {
@@ -47,7 +52,18 @@ export function engineConfig(): EngineConfig | null {
   if (!binary || !model || !sha256) return null;
   if (!/^[a-f0-9]{64}$/i.test(sha256))
     throw new Error("ACOS_MODEL_SHA256 must be a SHA-256 digest.");
+  const adapter = modelAdapter(
+    process.env.ACOS_MODEL_ADAPTER ??
+      (sha256.toLowerCase() ===
+      "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db"
+        ? "qwen-chatml"
+        : "unconfigured"),
+  );
   return {
+    adapter: adapter.id,
+    vulkanRenderNode: process.env.ACOS_VULKAN_RENDER_NODE,
+    acceleratorMemoryBytes:
+      Number(process.env.ACOS_MODEL_VRAM_MB ?? 0) * 1024 ** 2,
     binary,
     model,
     sha256: sha256.toLowerCase(),
@@ -94,25 +110,47 @@ export class LocalEngine {
       this.hardware.isolation = previousIsolation;
     return this.hardware;
   }
-  private allocate() {
+  private vulkan: { id: string; engineDevice: string } | null = null;
+  private probingVulkan = false;
+  private allocate(): ComputePlan {
     const config = this.config!;
     const hardware = this.discover(false);
-    const plan = planCompute(
-      hardware,
-      [cpuProvider],
-      {
-        memoryBytes: config.memoryBytes,
-        acceleratorMemoryBytes: 0,
-        maxThreads:
-          config.maxThreads ??
-          Math.max(1, Math.min(32, hardware.cpu.usableThreads - 1)),
-      },
-      {
-        backend: config.backend ?? "auto",
-        allowCpu: true,
-        memoryFraction: 0.75,
-      },
-    );
+    let plan: ComputePlan;
+    try {
+      plan = planCompute(
+        hardware,
+        this.vulkan && !this.probingVulkan
+          ? [
+              {
+                backend: "vulkan",
+                architectures: [hardware.architecture],
+                devices: [this.vulkan.id],
+              },
+            ]
+          : [cpuProvider],
+        {
+          memoryBytes: config.memoryBytes,
+          acceleratorMemoryBytes:
+            this.vulkan && !this.probingVulkan
+              ? (config.acceleratorMemoryBytes ?? 0)
+              : 0,
+          maxThreads:
+            config.maxThreads ??
+            Math.max(1, Math.min(32, hardware.cpu.usableThreads - 1)),
+        },
+        {
+          backend: this.probingVulkan ? "cpu" : (config.backend ?? "auto"),
+          allowCpu: true,
+          memoryFraction: 0.75,
+        },
+      );
+    } catch (error) {
+      if (this.vulkan && config.backend === "auto") {
+        this.vulkan = null;
+        return this.allocate();
+      }
+      throw error;
+    }
     executionLimits(config, plan.threads);
     this.lastPlan = plan;
     return plan;
@@ -127,6 +165,8 @@ export class LocalEngine {
   // The confinement primitive. Selected once from the host platform; the engine
   // never hard-codes bwrap/prlimit or Windows specifics.
   readonly isolation: IsolationAdapter = selectIsolationAdapter();
+  private containment: JobContainment | null = null;
+  private containmentFailure: Error | null = null;
   private activeHandle: IsolationHandle | null = null;
   constructor(config: EngineConfig | null) {
     this.config = config;
@@ -139,8 +179,12 @@ export class LocalEngine {
     this.verified = false;
     const epoch = this.epoch;
     const config = this.config;
+    modelAdapter(config.adapter);
     this.discover();
+    this.vulkan = null;
+    this.probingVulkan = true;
     this.allocate();
+    this.probingVulkan = false;
     config.binary = await realpath(config.binary);
     config.model = await realpath(config.model);
     if (this.privateDirectory) {
@@ -168,6 +212,37 @@ export class LocalEngine {
       throw new Error("Model changed during integrity verification.");
     if (epoch !== this.epoch) throw new Error("Engine verification cancelled.");
     this.modelStamp = stamp;
+    if (
+      config.vulkanRenderNode &&
+      (config.backend === "auto" || config.backend === "vulkan")
+    ) {
+      try {
+        if (process.platform !== "linux")
+          throw new Error("Vulkan isolation is currently Linux-only.");
+        const pci = renderDevice(config.vulkanRenderNode);
+        this.probingVulkan = true;
+        const listing = await this.execute(
+          "/engine/" + path.basename(config.binary),
+          ["--list-devices"],
+          true,
+        );
+        if (epoch !== this.epoch)
+          throw new Error("Engine verification cancelled.");
+        this.vulkan = admitVulkan(
+          this.hardware!,
+          pci,
+          listing,
+          config.acceleratorMemoryBytes ?? 0,
+        );
+      } catch (error) {
+        if (config.backend === "vulkan" || epoch !== this.epoch) throw error;
+        // Auto falls back before inference starts, never after emitting a partial answer.
+        this.vulkan = null;
+      } finally {
+        this.probingVulkan = false;
+      }
+    }
+    this.allocate();
     await this.execute("/bin/true", [], false);
     this.verified = true;
   }
@@ -210,7 +285,9 @@ export class LocalEngine {
       "-tb",
       String(this.lastPlan?.threads ?? 1),
       "-ngl",
-      "0",
+      this.vulkan ? "999" : "0",
+      "--device",
+      this.vulkan?.engineDevice ?? "none",
       "--no-warmup",
       "--no-display-prompt",
       "--simple-io",
@@ -266,7 +343,8 @@ export class LocalEngine {
         buffered = value;
       })
       .catch((error: unknown) => {
-        failure = error instanceof Error ? error : new Error("Inference failed");
+        failure =
+          error instanceof Error ? error : new Error("Inference failed");
       })
       .finally(() => {
         finished = true;
@@ -300,6 +378,12 @@ export class LocalEngine {
   }
   cancel() {
     this.epoch++;
+    try {
+      this.containment?.kill();
+    } catch (error) {
+      this.containmentFailure = error as Error;
+      this.verified = false;
+    }
     if (this.active?.pid) {
       // The adapter owns the confinement primitive and knows how to reap it:
       // process-group kill on Linux, Job Object teardown on Windows.
@@ -318,12 +402,18 @@ export class LocalEngine {
     model: boolean,
     onChunk?: (text: string) => void,
   ): Promise<string> {
+    if (this.containmentFailure) throw this.containmentFailure;
     if (this.active) throw new Error("Engine already has an active operation.");
     const config = this.config;
     if (!config || !this.lastPlan)
       throw new Error("Resources have not been admitted.");
     // The confinement primitive is chosen by the adapter, not here. On Linux this
     // is prlimit + bwrap; on Windows it is the AppContainer/Job Object helper.
+    if (
+      this.vulkan &&
+      renderDevice(config.vulkanRenderNode!) !== this.vulkan.id
+    )
+      throw new Error("Accelerator device changed after verification.");
     const wrapped = this.isolation.wrap({
       command: [command, ...args],
       readOnlyPaths:
@@ -334,6 +424,10 @@ export class LocalEngine {
             ]
           : [],
       writablePaths: [],
+      renderNode:
+        model && (this.vulkan || this.probingVulkan)
+          ? config.vulkanRenderNode
+          : undefined,
       env: model && config ? { LD_LIBRARY_PATH: "/engine" } : {},
       workdir: model && config ? "/engine" : undefined,
       limits: {
@@ -344,9 +438,22 @@ export class LocalEngine {
         logicalThreads: this.hardware?.cpu.logicalThreads,
       },
     });
+    const cgroupRoot = process.env.ACOS_CGROUP_ROOT;
+    if (process.env.ACOS_REQUIRE_CGROUP === "1" && !cgroupRoot)
+      throw new Error(
+        "Strict physical memory containment requires ACOS_CGROUP_ROOT.",
+      );
+    this.containment = cgroupRoot
+      ? new JobContainment(
+          cgroupRoot,
+          config.memoryBytes,
+          this.lastPlan.threads + 16,
+        )
+      : null;
+    const argv = this.containment?.wrap(wrapped.argv) ?? wrapped.argv;
     this.reservation = this.lastPlan;
     return new Promise((resolve, reject) => {
-      const child = spawn(wrapped.argv[0], wrapped.argv.slice(1), {
+      const child = spawn(argv[0], argv.slice(1), {
         detached: true,
         env: wrapped.env,
         stdio: ["ignore", "pipe", "pipe"],
@@ -374,16 +481,31 @@ export class LocalEngine {
       child.stderr?.on("data", (data) => {
         err = (err + data.toString()).slice(-4000);
       });
+      let spawnError: Error | null = null;
       child.on("error", (error) => {
+        spawnError = error;
+      });
+      child.on("close", async (code, signal) => {
+        try {
+          await this.containment?.close();
+        } catch (error) {
+          spawnError = error as Error;
+          this.containmentFailure = spawnError;
+          this.verified = false;
+        }
+        this.containment = null;
+        if (spawnError) {
+          const error = spawnError;
+          clearTimeout(timer);
+          this.active = null;
+          this.activeHandle = null;
+          this.reservation = null;
+          reject(error);
+          return;
+        }
         clearTimeout(timer);
         this.active = null;
         this.activeHandle = null;
-        this.reservation = null;
-        reject(error);
-      });
-      child.on("close", (code, signal) => {
-        clearTimeout(timer);
-        this.active = null;
         this.reservation = null;
         if (timedOut)
           reject(

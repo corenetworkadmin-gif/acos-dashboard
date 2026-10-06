@@ -1,3 +1,5 @@
+import { MigrationPanel } from "./MigrationPanel";
+import { RecoveryPanel } from "./RecoveryPanel";
 import { useState } from "react";
 import { Shield, ShieldAlert, ShieldCheck } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -92,8 +94,8 @@ export default function SettingsPanel() {
           </div>
         </div>
         <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-          The key lives beside the database with owner-only permissions. If it is
-          lost, sealed data cannot be recovered; if it is tampered with, ACOS
+          The key lives beside the database with owner-only permissions. If it
+          is lost, sealed data cannot be recovered; if it is tampered with, ACOS
           refuses to start rather than serve unverified memory.
         </p>
         <div className="mt-4">
@@ -106,6 +108,8 @@ export default function SettingsPanel() {
           </ActionButton>
         </div>
       </Widget>
+      <RecoveryPanel />
+      <MigrationPanel />
       <div className="grid gap-6 lg:grid-cols-2">
         <Widget
           title="Companion identity"

@@ -4,7 +4,20 @@ Date: 2026-10-05 (UTC) · Owner assignment: finish and deliver the ACOS program,
 This report states plainly what was delivered, what was verified, what is blocked, and the
 hardware-independence answer. It makes **no** claim of "complete", "production-ready" or "secure".
 
-## 1. What was delivered
+Owner update (2026-10-06): delivery scope is **desktop app**; P1 and P3 are delivered.
+P2, P4 and P5 remain open, together with documented platform-verification and hardening
+follow-ups. The test results below are historical evidence, not a fresh validation run.
+
+## Current desktop update — 2026-10-06
+
+See [desktop implementation update](desktop-completion.md) for the latest delivery and
+remaining blockers. Current checks: 136 tests passed, typecheck clean, lint 0 errors
+(six existing warnings), launch tests and packaged API/UI health verified. The live
+browser recovery flow and real Qwen CPU inference passed. Vulkan, delegated cgroups,
+Secret Service and hardware trust require target verification. The following Phase-1
+report is retained as historical context and does not override that current inventory.
+
+## 1. Historical Phase-1 delivery
 
 A working, installable-on-Linux desktop application (host runtime + dashboard) that advances the
 ACOS desktop-app scope across every roadmap Phase-1 area, plus a full evidence trail. Concretely,
@@ -43,8 +56,9 @@ scheduler (6), tools (5), adversarial (20), packaging (5), launch (2).
 ## 3. What is NOT done (honest blockers and gaps)
 
 - **Windows runtime is unverified.** The Windows installer is authored but cannot be executed in
-  this Linux sandbox. There is **no native Windows isolation adapter** — only a written design
-  (`docs/windows-native-isolation.md`). The shipped Windows path is a managed WSL2 guest runtime,
+  this Linux sandbox. The native isolation adapter, helper source and verifier
+  are implemented (`docs/windows-native-isolation.md`); native compilation and enforcement
+  remain unverified here. The shipped Windows path is a managed WSL2 guest runtime,
   which requires the owner's explicit agreement before it can be called the product runtime.
 - **No GPU/NPU execution.** Hardware discovery and compatibility logic exist and are tested with
   synthetic inventories, but inference executes on CPU only. No CUDA/Metal/Vulkan/ROCm backend.
@@ -63,9 +77,8 @@ scheduler (6), tools (5), adversarial (20), packaging (5), launch (2).
 - **No independent security assessment.** The adversarial suite is self-authored.
 - **No signing certificates or release artifacts.** (Source *is* published and CI *is* green —
   see §6.)
-- **Scope conflict unresolved.** The architecture describes a standalone OS; the roadmap describes
-  a desktop app. This delivery implements the **desktop-app** scope. The standalone-OS items
-  (bootable distribution, secure boot, OS-level device mediation) require an explicit owner ruling.
+- **Scope resolved (2026-10-06).** The owner explicitly selected a **desktop app**. Standalone-OS
+  delivery is outside the agreed scope; desktop runtime isolation remains a requirement.
 
 ## 4. Hardware-independence answer
 
