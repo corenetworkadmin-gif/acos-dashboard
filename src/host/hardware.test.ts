@@ -142,10 +142,10 @@ test("PCI enumeration handles integrated, discrete and other accelerators with u
   assert.equal(h.accelerators[1].availableMemoryBytes, 6 * GiB);
   assert.equal(h.accelerators[2].type, "accelerator");
   assert.equal(planCompute(h, [cpuProvider], workload, policy).deviceId, "cpu");
-  assert.throws(
-    () =>
-      planCompute(h, [cpuProvider], workload, { ...policy, backend: "cuda" }),
-    /No compatible/,
+  assert.equal(
+    planCompute(h, [cpuProvider], workload, { ...policy, backend: "cuda" })
+      .backend,
+    "cpu",
   );
 });
 test("optional NVIDIA telemetry merges PCI identities and handles unknown memory", () => {
@@ -202,9 +202,10 @@ test("provider contract selects by compatibility, workload, availability and pre
     "b",
   );
   h.accelerators[1].availableMemoryBytes = 0;
-  assert.throws(
-    () => planCompute(h, providers, gpuWork, policy),
-    /No compatible/,
+  assert.equal(planCompute(h, providers, gpuWork, policy).backend, "cpu");
+  assert.equal(
+    planCompute(h, providers, gpuWork, policy).acceleratorMemoryBytes,
+    0,
   );
   assert.equal(
     planCompute(h, providers, workload, { ...policy, backend: "cpu" }).deviceId,

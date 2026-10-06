@@ -41,11 +41,11 @@ pnpm install:linux                # per-user launcher + desktop entry
 
 ## Priority 2 — local AI completeness (implemented paths; hardware validation remains)
 
-6. **Vulkan path implemented.** Explicit render-node isolation, isolated backend probe,
+6. **Backend registry and Linux Vulkan/CUDA/ROCm paths implemented.** Explicit render-node isolation, isolated backend probe,
    measured VRAM admission and CPU fallback are present. Verify on actual hardware before
-   claiming support; CUDA/NPU backends are not implemented.
-7. **Model registry implemented.** Qwen/ChatML and Llama 3 GGUF framing are registered.
-   Verify Llama models/tokenizers with real models; only reference Qwen CPU inference was exercised.
+   claiming support. Metal/native Windows GPU and NPU execution remain unavailable.
+7. **Model registry implemented.** Qwen/ChatML, Llama 3, Mistral v0.1/v0.2, Gemma 1/2 and Phi-3/3.5 GGUF framing are registered.
+   Verify non-reference models/tokenizers with real models; only reference Qwen CPU inference was exercised.
 8. **Cgroup containment implemented.** Delegated Linux memory/pids limits, cancellation and
    orphan reconciliation are present. Real 32-worker, memory-pressure, timeout and crash tests
    in a delegated subtree remain blocked in this sandbox. Existing rlimit tests still pass.
@@ -99,5 +99,5 @@ See [implementation update](desktop-completion.md), [lifecycle trust](lifecycle-
 
 ## Current green baseline (do not break)
 
-`pnpm typecheck` clean · `pnpm test` 136/136 · `pnpm test:launch` 2/2 · `pnpm lint` 0 errors ·
+`pnpm typecheck` clean · `pnpm test` 144/144 · `pnpm test:launch` 2/2 · `pnpm lint` 0 errors ·
 `pnpm build` succeeds.

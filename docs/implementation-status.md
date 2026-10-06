@@ -74,3 +74,10 @@ operational. Financial and propagation authority are not configurable capabiliti
 
 Hardware contract and platform limits: [hardware discovery](hardware.md).
 Open hand-off list: [remaining work](REMAINING-WORK.md).
+
+## P2 registry completion — 2026-10-06
+
+Backend descriptors, Linux accelerator admission, explicit CPU fallback reasons, five model-family
+framing adapters and containment plans are implemented. See [local AI](local-ai.md) for configuration and limits.
+No GPU execution, non-reference model inference or delegated-cgroup enforcement was verified here.
+Metal/native Windows GPU execution remains disabled; CPU isolation remains required.

@@ -123,3 +123,21 @@ test("streaming inference yields deltas and strips the end-of-text marker", asyn
     f.close();
   }
 });
+
+test("missing accelerator falls back to confined CPU with no GPU offload", async () => {
+  const f = fixture('printf "%s\\n" "$@"');
+  try {
+    f.engine.config!.backend = "cuda";
+    f.engine.config!.acceleratorBackend = "cuda";
+    f.engine.config!.acceleratorMemoryBytes = 1024 ** 3;
+    await f.engine.verify();
+    const result = await f.engine.infer("hi");
+    assert.match(result, /-ngl\n0\n--device\nnone/);
+    assert.equal(f.engine.lastPlan?.fallback, true);
+    assert.equal(f.engine.lastPlan?.acceleratorMemoryBytes, 0);
+    assert.match(f.engine.lastPlan?.reason ?? "", /CPU fallback/);
+    assert.equal(f.engine.reservation, null);
+  } finally {
+    f.close();
+  }
+});

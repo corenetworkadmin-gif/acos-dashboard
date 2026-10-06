@@ -1,3 +1,4 @@
+import { backendRegistry } from "./backends.ts";
 import { loadStorageKey } from "./storage-key.ts";
 import {
   createMigrationOffer,
@@ -6,7 +7,12 @@ import {
 } from "./migration.ts";
 import { HostIdentity } from "./trust.ts";
 import { z } from "zod";
-import { appendToolResults, formatPrompt, modelRegistry } from "./models.ts";
+import {
+  appendToolResults,
+  formatPrompt,
+  modelRegistry,
+  resolveModel,
+} from "./models.ts";
 import { DatabaseSync } from "node:sqlite";
 import { createHash, randomUUID } from "node:crypto";
 import {
@@ -419,6 +425,13 @@ export class HostRuntime {
           ? path.basename(this.engine.config.model)
           : null,
         modelRegistry,
+        modelCompatibility: this.engine.config
+          ? resolveModel({
+              id: this.engine.config.adapter,
+              filename: this.engine.config.model,
+              sha256: this.engine.config.sha256,
+            })
+          : null,
         modelAdapter: this.engine.config?.adapter ?? "qwen-chatml",
         modelHash: this.engine.verified ? this.engine.config?.sha256 : null,
         isolation: this.engine.verified ? "VERIFIED" : "NOT_VERIFIED",
@@ -431,14 +444,17 @@ export class HostRuntime {
         memoryReservation: this.engine.reservation?.memoryBytes ?? 0,
         hardware: this.engine.hardware,
         compute: this.engine.lastPlan,
-        providers: [
-          {
-            backend: "cpu",
-            architectures: ["x64", "arm64"],
-            status:
-              "Requires configured compatible binary/model and successful load",
-          },
-        ],
+        containment: this.engine.containmentPlan,
+        providers: backendRegistry.map((backend) => ({
+          backend: backend.id,
+          architectures: [...backend.architectures],
+          status: !backend.executionPlatforms.includes(process.platform)
+            ? "Discovery only; execution isolation unavailable"
+            : this.engine.lastPlan?.backend === backend.id &&
+                this.engine.verified
+              ? "Admitted for this installation"
+              : "Requires successful isolated probe and resource admission",
+        })),
         engineError: this.engineError,
       },
     };

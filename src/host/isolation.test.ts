@@ -55,7 +55,9 @@ test("Linux adapter wraps a command in prlimit + bubblewrap with the admitted li
     "model is bound read-only",
   );
   assert.ok(
-    wrapped.argv.join("\u0000").includes("--setenv\u0000LD_LIBRARY_PATH\u0000/engine"),
+    wrapped.argv
+      .join("\u0000")
+      .includes("--setenv\u0000LD_LIBRARY_PATH\u0000/engine"),
   );
   assert.ok(wrapped.argv.join("\u0000").includes("--chdir\u0000/engine"));
   // The confined command is the tail of the argv.
@@ -132,7 +134,11 @@ test("Windows adapter emits a helper argv carrying a complete job spec", () => {
   assert.equal(spec.appContainer, "capability-free");
   assert.equal(spec.network, "deny");
   assert.equal(spec.integrity, "low");
-  assert.deepEqual(spec.command, ["C:\\engine\\llama.exe", "-m", "C:\\model.gguf"]);
+  assert.deepEqual(spec.command, [
+    "C:\\engine\\llama.exe",
+    "-m",
+    "C:\\model.gguf",
+  ]);
   assert.equal(spec.limits.activeProcessLimit, 1);
   assert.ok(spec.jobName.startsWith("ACOS-Engine-"));
   assert.equal(wrapped.handle.jobName, spec.jobName);
@@ -182,7 +188,10 @@ test("macOS adapter builds a deny-by-default Seatbelt profile and ulimit wrapper
   assert.match(profile, /\(subpath "\/opt\/engine"\)/);
   assert.match(profile, /\(subpath "\/models\/q\.gguf"\)/);
   assert.match(profile, /\(allow file-write\* \(subpath "\/tmp\/scratch"\)\)/);
-  assert.match(profile, /\(allow process-exec \(literal "\/engine\/llama-completion"\)\)/);
+  assert.match(
+    profile,
+    /\(allow process-exec \(literal "\/engine\/llama-completion"\)\)/,
+  );
   // The confined command is the tail of the argv, unchanged.
   assert.deepEqual(wrapped.argv.slice(-3), [
     "/engine/llama-completion",
@@ -221,4 +230,26 @@ test("discovery probe reuses the injectable runner on Linux and delegates elsewh
   // Non-Linux delegates to the platform adapter (unavailable off Windows here).
   const win = probeIsolation({ platform: "win32", run: () => "" });
   assert.equal(win.available, false);
+});
+
+test("device passthrough refuses unrelated nodes and unsupported native platforms", () => {
+  const input = {
+    command: ["/bin/true"],
+    readOnlyPaths: [],
+    writablePaths: [],
+    env: {},
+    devicePaths: ["/dev/null"],
+    limits: { memoryBytes: GiB, timeoutMs: 1000, threads: 1 },
+  };
+  assert.throws(() => new LinuxIsolationAdapter().wrap(input), /accelerator/);
+  assert.throws(
+    () => new WindowsIsolationAdapter().wrap(input),
+    /not implemented/,
+  );
+  assert.throws(() => new DarwinIsolationAdapter().wrap(input), /passthrough/i);
+  const wrapped = new WindowsIsolationAdapter().wrap({
+    ...input,
+    devicePaths: [],
+  });
+  assert.deepEqual(JSON.parse(wrapped.argv[2]).devicePaths, []);
 });

@@ -29,7 +29,7 @@ export default function LocalAIEngineStatus() {
               {state.host.model ?? "No model configured"}
             </p>
             <p className="mt-2 text-xs text-muted-foreground">
-              Local CPU inference · Fully offline execution
+              Local inference · Fully offline execution
             </p>
           </div>
         </div>
@@ -62,6 +62,11 @@ export default function LocalAIEngineStatus() {
             </div>
           ))}
         </div>
+        {state.host.compute?.reason && (
+          <p className="mt-4 text-xs text-muted-foreground">
+            {state.host.compute.reason}
+          </p>
+        )}
         {state.host.engineError && (
           <p
             role="alert"

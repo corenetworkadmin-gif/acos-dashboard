@@ -169,3 +169,10 @@ sandbox. "N/A (definitional)" rows are narrative/definitional and carry no runti
 
 See `REMAINING-WORK.md` for the ordered hand-off list and `FINAL-REPORT.md` for the honest
 narrative and the hardware-independence answer.
+
+## P2 registry completion — 2026-10-06
+
+Backend descriptors, Linux accelerator admission, explicit CPU fallback reasons, five model-family
+framing adapters and containment plans are implemented. See [local AI](local-ai.md) for configuration and limits.
+No GPU execution, non-reference model inference or delegated-cgroup enforcement was verified here.
+Metal/native Windows GPU execution remains disabled; CPU isolation remains required.
