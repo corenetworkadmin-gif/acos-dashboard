@@ -2,7 +2,10 @@
 export const modelRegistry = [
   {
     id: "qwen-chatml",
-    families: ["Qwen2", "Qwen2.5"],
+    // Qwen3 uses the same ChatML-style framing (its embedded GGUF template is
+    // ChatML-based); family names are descriptive — selection is explicit via
+    // ACOS_MODEL_ADAPTER, never inferred from the file.
+    families: ["Qwen2", "Qwen2.5", "Qwen3"],
     format: "GGUF",
     tokenizer: "GPT-2 BPE",
     template: "chatml",
