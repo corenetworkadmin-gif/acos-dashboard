@@ -80,7 +80,11 @@ supersedes statements that these software paths do not exist.
    destination-bound transfer are implemented under trusted-host assumptions.
 6. GPU/NPU accelerator backends (CUDA/Metal/Vulkan/ROCm) with per-backend isolation and CPU
    fallback. Linux Vulkan path implemented; actual GPU execution remains unverified here.
-7. Real-model validation of the new Llama 3 registry entry; additional model families remain future work.
+7. Real-model validation of the new Llama 3 registry entry; additional model families remain
+   future work. A Qwen3-8B (Q4_K_M) configuration example — digest, adapter, RAM and
+   address-space budget — is provided in `.env.example`; the `qwen-chatml` registry entry now
+   lists the Qwen3 family, but the model has **not** been run or validated in this repository's
+   environment.
 8. Signed release artifacts, checksums and update trust; published CI run and merged commit.
 
 Unavailable providers fail closed. The interface does not represent these remaining subsystems as
