@@ -56,12 +56,21 @@ pnpm install:linux                # per-user launcher + desktop entry
    and `remote.execute` now run through a default-deny provider registry
    (`src/host/providers.ts`) inside the same versioned operation/admission/authorization/audit
    pipeline, with a provider-specific target constraint and final revalidation. See
-   `docs/providers-and-authority.md`. **Remaining:** ship a real microphone/camera `DeviceBridge`
-   and a real `RemoteTransport`, and verify the network transport path against a live allowlisted
-   host (its refusals are tested; a live fetch is not).
-10. **Extension lifecycle — delivered (inert).** Manifests are validated, install grants nothing
-    (`grants: []`), and non-escalation is proven structurally (`src/host/extensions.ts`).
-    **Remaining:** manifest signing and WASI-or-equivalent isolated execution.
+   `docs/providers-and-authority.md`. **Shipped (2026-10-06):** a real ffmpeg `CommandDeviceBridge`
+   and a real OpenSSH `SshRemoteTransport` (both opt-in via `ACOS_DEVICE_BRIDGE=ffmpeg` /
+   `ACOS_REMOTE_TRANSPORT=ssh`; default-deny unchanged), and a live transport-path fetch test
+   against a local allowlisted HTTP server (`network-provider.live.integration.test.ts`).
+   **Remaining:** capture on real microphone/camera hardware and a remote execution against a
+   live SSH endpoint (neither is possible in this repository's test environment).
+10. **Extension lifecycle — delivered.** Manifests are validated (signed installation via the
+    pinned Ed25519 key), install grants nothing (`grants: []`), and non-escalation is proven
+    structurally (`src/host/extensions.ts`). **Shipped (2026-10-06):** isolated execution —
+    the `runExtension` command runs an installed extension's WASM under
+    `wasi_snapshot_preview1` in a bounded worker sandbox (no preopens/env, in-sandbox stdout
+    clamp, hard timeout kill, escalation re-check, audited with `Grants: none`);
+    see `src/host/extension-sandbox.ts`. **Remaining:** manifest-signing policy is
+    host-configured (`ACOS_EXTENSION_PUBLIC_KEY_FILE`); a signed-registry distribution channel
+    and cross-platform WASI verification remain open.
 
 ## Priority 4 — lifecycle and trust (software paths delivered; hardware trust remains)
 
@@ -100,4 +109,6 @@ See [implementation update](desktop-completion.md), [lifecycle trust](lifecycle-
 ## Current green baseline (do not break)
 
 `pnpm typecheck` clean · `pnpm test` 136/136 · `pnpm test:launch` 2/2 · `pnpm lint` 0 errors ·
-`pnpm build` succeeds.
+`pnpm build` succeeds. (Linux sandbox figures. On a Windows 11 host the platform-dependent
+Linux-only tests fail — identically on unmodified `main`; see the re-verification note in
+`implementation-status.md`.)

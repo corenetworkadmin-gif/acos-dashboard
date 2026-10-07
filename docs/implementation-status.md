@@ -13,6 +13,17 @@ It does not claim "complete", "production-ready" or "secure". See
 - `pnpm typecheck` clean · `pnpm test` **136/136 pass** · `pnpm test:launch` **2/2 pass** ·
   `pnpm lint` 0 errors (6 pre-existing Fast Refresh warnings) · `pnpm build` succeeds.
 
+## Re-verification — 2026-10-06 (Windows 11 host)
+
+- `pnpm typecheck` clean · `pnpm lint` 0 errors (6 pre-existing warnings) ·
+  `pnpm test` **160 tests, 141 pass, 19 fail** — all 19 failures are the platform-dependent
+  Linux-only tests (bubblewrap namespaces, POSIX file modes, shell installers, fsync) and fail
+  **identically on unmodified `main`** (138 tests, 117 pass, 21 fail there — the extra two are
+  the previously broken fake-API live-network tests, now fixed and passing).
+- New coverage landing with this pass: live network transport fetch, `CommandDeviceBridge`,
+  `SshRemoteTransport`, and WASI extension execution (see
+  [providers and authority](providers-and-authority.md)).
+
 ## Desktop update — 2026-10-06
 
 [Current implementation and blockers](desktop-completion.md): model registry, Linux Vulkan
@@ -35,8 +46,8 @@ supersedes statements that these software paths do not exist.
 | Local AI | Verified GGUF, llama.cpp CPU inference, real model/tokenizer health check, ChatML context, offline namespace, cancellation | Qwen/ChatML reference adapter; one concrete tokenizer |
 | **Streaming inference** | Token-by-token stdout iterator through the same admission/authorization/audit pipeline; SSE endpoint; UI token streaming; mid-stream cancellation | CPU path only |
 | **Tool-call mediation** | Declared tools, structured `<tool_call>` JSON parser, routed through the same operation pipeline; model text never executed; unknown/denied tools fail closed | Tool set is the declared reference set |
-| **Governed providers** | Default-deny provider registry; attach (host fact) separated from enable (policy grant); provider `authorizeTarget` is a second constraint, never a grant; network provider with exact-host allowlist, scheme/credential/private-address refusal and DNS-rebinding re-check; device + remote providers as bridge/transport contracts (unavailable without a component) | Network transport path real but exercised via refusal + a deterministic double; no shipped device bridge or remote transport |
-| **Extension lifecycle** | Strict manifest schema; install is inert (`grants: []`); `detectEscalation` structural non-escalation proof; unknown requests grant nothing | Pinned signed manifests supported; isolated execution remains open |
+| **Governed providers** | Default-deny provider registry; attach (host fact) separated from enable (policy grant); provider `authorizeTarget` is a second constraint, never a grant; network provider with exact-host allowlist, scheme/credential/private-address refusal and DNS-rebinding re-check; **shipped components**: ffmpeg `CommandDeviceBridge` and OpenSSH `SshRemoteTransport` (opt-in via `ACOS_DEVICE_BRIDGE`/`ACOS_REMOTE_TRANSPORT`; default-deny unchanged); live transport-path fetch against a local allowlisted server | Device capture on real hardware and a remote execution against a live endpoint are not exercised here |
+| **Extension lifecycle** | Strict manifest schema; install is inert (`grants: []`); `detectEscalation` structural non-escalation proof; unknown requests grant nothing; **signed installation** (pinned Ed25519 key); **WASI isolated execution** (`runExtension`: no preopens/env, in-sandbox stdout clamp, hard timeout kill, escalation re-check, audited `Grants: none`) | Pinned signed manifests supported; a signed-registry distribution channel remains open |
 | **Guided onboarding** | First-run detection + step flow (hardware → engine → companion → first chat); `/setup` route; first-run banner | — |
 | **Scheduler / event bus** | Durable scheduled + event-triggered tasks through the authority pipeline; idempotency keys; recovery-journal reconciliation | — |
 | Home | Governed read/write, durable notes, messages retained independent of engine | Bounded note count/length |
@@ -58,10 +69,13 @@ supersedes statements that these software paths do not exist.
    (`docs/windows-native-isolation.md`), but the native helper is authored-not-compiled here and the
    path is unverified on real Windows 11 hardware; the shipped Windows path remains a managed WSL2
    guest runtime.
-4. Signed provider/extension registry and WASI-or-equivalent extension isolation. The governed
-   provider registry, network provider, device/remote contracts and inert extension lifecycle are
-   implemented (`docs/providers-and-authority.md`); what remains is manifest signing, isolated
-   extension execution, and shipped device/remote components.
+4. Signed provider/extension registry distribution and cross-platform extension-isolation
+   verification. The governed provider registry, network provider, **shipped device/remote
+   components** (opt-in ffmpeg bridge, OpenSSH transport), inert extension lifecycle, signed
+   installation and **WASI isolated execution** are implemented
+   (`docs/providers-and-authority.md`); what remains is a signed-registry distribution channel,
+   verification of device capture on real hardware, a remote execution against a live endpoint,
+   and WASI verification on platforms other than the host used here.
 5. Hardware-backed anti-cloning and anti-rollback for migration; software retirement and
    destination-bound transfer are implemented under trusted-host assumptions.
 6. GPU/NPU accelerator backends (CUDA/Metal/Vulkan/ROCm) with per-backend isolation and CPU

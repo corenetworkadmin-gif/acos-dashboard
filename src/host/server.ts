@@ -19,6 +19,28 @@ import { pathToFileURL } from "node:url";
 import { z } from "zod";
 import { HostRuntime, envelope, samplePackage } from "./runtime.ts";
 import { engineConfig, LocalEngine } from "./engine.ts";
+import { defaultProviders, ProviderRegistry } from "./providers.ts";
+import { CommandDeviceBridge } from "./providers/device-bridge.ts";
+import { SshRemoteTransport } from "./providers/remote-transport.ts";
+
+// Administrator-opted-in provider components. A fresh host with no
+// configuration ships exactly the default-deny set (no bridge, no transport);
+// setting ACOS_DEVICE_BRIDGE=ffmpeg / ACOS_REMOTE_TRANSPORT=ssh makes the
+// corresponding component *present* so the administrator can attach it — it
+// never attaches or enables anything by itself.
+function configuredProviders(): ProviderRegistry {
+  const deviceBridge =
+    process.env.ACOS_DEVICE_BRIDGE === "ffmpeg"
+      ? new CommandDeviceBridge({
+          tool: process.env.ACOS_FFMPEG_PATH || undefined,
+          microphone: process.env.ACOS_DEVICE_MIC || undefined,
+          camera: process.env.ACOS_DEVICE_CAM || undefined,
+        })
+      : null;
+  const remoteTransport =
+    process.env.ACOS_REMOTE_TRANSPORT === "ssh" ? new SshRemoteTransport() : null;
+  return new ProviderRegistry(defaultProviders({ deviceBridge, remoteTransport }));
+}
 
 const commandSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("migrationOffer") }).strict(),
@@ -129,6 +151,15 @@ const commandSchema = z.discriminatedUnion("type", [
     .object({
       type: z.literal("removeExtension"),
       id: z.string().max(80),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("runExtension"),
+      id: z.string().max(80),
+      // Base64-encoded WASI binary; bounded to 8 MiB decoded.
+      wasm: z.string().max(12_000_000),
+      timeoutMs: z.number().int().min(100).max(30_000).optional(),
     })
     .strict(),
   z
@@ -465,6 +496,13 @@ export function createHostServer(
           case "removeExtension":
             result = runtime.removeExtension(command.id);
             break;
+          case "runExtension":
+            result = await runtime.runExtension(
+              command.id,
+              command.wasm,
+              command.timeoutMs,
+            );
+            break;
           case "engine":
             result = await runtime.setEngine(command.status);
             break;
@@ -572,7 +610,9 @@ if (
     throw new Error(
       "Administrator key file is malformed. Restore the trusted key before startup.",
     );
-  const runtime = new HostRuntime(directory, new LocalEngine(engineConfig()));
+  const runtime = new HostRuntime(directory, new LocalEngine(engineConfig()), {
+    providers: configuredProviders(),
+  });
   runtime.startScheduler();
   const server = createHostServer(
     runtime,

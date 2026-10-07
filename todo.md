@@ -28,3 +28,16 @@ Rule: finish P1 → update GitHub → finish P3 → update GitHub. Leave credit 
       docs/providers-and-authority.md; status/checklist/report/README corrected — 124/124 pass)
 - [x] 17. Green baseline + commit + push + merge to main
       (b70b289 pushed to acos/p3-providers-authority, fast-forward merged to main; GitHub updated)
+
+## P3b — providers & extension hardening (2026-10-06, Windows 11 host)
+- [x] 18. Fixed the broken live-network test (was written against a non-existent API) and made it
+      a real transport-path integration test: live fetch, size cap, redirect handling, refusals
+- [x] 19. `src/host/providers/device-bridge.ts`: real ffmpeg `CommandDeviceBridge`
+      (bounded/abortable capture, honest probe, temp-dir cleanup); opt-in via `ACOS_DEVICE_BRIDGE`
+- [x] 20. `src/host/providers/remote-transport.ts`: real OpenSSH `SshRemoteTransport`
+      (shell-free argv, target validation, output cap, timeout/abort kill); opt-in `ACOS_REMOTE_TRANSPORT=ssh`
+- [x] 21. `src/host/extension-sandbox.ts` + `runExtension` command: WASI preview1 sandbox in a
+      bounded worker (no preopens/env, in-sandbox stdout clamp, hard timeout kill,
+      detectEscalation re-check, audited `Grants: none`)
+- [x] 22. Tests: device-bridge, remote-transport, extension-sandbox, extension-execution,
+      live network — 23 new/rewritten tests, all passing; docs + `.env.example` updated

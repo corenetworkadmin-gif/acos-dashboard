@@ -4,10 +4,14 @@
 > (`src/host/providers.ts`, `src/host/extensions.ts`, wired through
 > `src/host/runtime.ts`, `src/host/tools.ts`, `src/host/server.ts`). The network
 > provider is real; its allowlist, scheme, credential and private-address
-> refusals are enforced in tests. Device and remote providers ship as contracts
-> with **no bridge/transport**, so they remain unavailable until a component is
-> explicitly supplied — that is the intended default, not a missing feature.
-> This document makes no claim of "complete", "production-ready" or "secure".
+> refusals are enforced in tests, and its transport path is exercised by a live
+> fetch against a local allowlisted server. This build also ships a real
+> ffmpeg device bridge and a real OpenSSH remote transport, both strictly
+> opt-in through host configuration (default-deny: a fresh install has neither).
+> Extension manifests support signed installation and execution now runs in a
+> WASI sandbox. Device capture on real hardware and a remote execution against
+> a live endpoint are **not** verified here. This document makes no claim of
+> "complete", "production-ready" or "secure".
 
 ACOS does not treat a capability as a property of the model. Every capability is
 supplied by an **explicitly attached provider** and is executed through the same
@@ -83,12 +87,40 @@ separately-installed component. Without one, `probe()` reports unavailable and
 provider captures through it and only for its own device (`authorizeTarget`
 requires the target to match the device).
 
+This build **ships one real bridge**: `CommandDeviceBridge`
+(`src/host/providers/device-bridge.ts`), which drives an installed ffmpeg with
+a bounded, abortable capture (audio: `-t` seconds of 16 kHz mono WAV; camera: a
+single frame), keeps the output in a private temp directory that is always
+removed, and returns only a bounded, secret-free summary. It is *opt-in*: the
+host constructs it only when `ACOS_DEVICE_BRIDGE=ffmpeg` is set (with optional
+`ACOS_FFMPEG_PATH`, `ACOS_DEVICE_MIC`, `ACOS_DEVICE_CAM`), so a fresh install
+still has no bridge at all. Its `probe()` reports honestly whether the capture
+tool exists and a device is configured — on Windows and macOS an explicit
+device name is required; Linux defaults to `pulse` `default` / `v4l2`
+`/dev/video0`. Capture on real hardware is not verified in this repository's
+test environment (no capture tool or device is present there); the command
+construction, success, failure and cleanup paths are covered by
+`src/host/device-bridge.test.ts` with an injected runner.
+
 ## Remote provider — `remote.execute`
 
 Remote execution is an independently-authorized capability with its own
 `RemoteTransport` component. Without a transport the capability stays
 unavailable. With one, the administrator attaches a specific endpoint and
 `authorizeTarget` requires the requested target to match it exactly.
+
+This build **ships one real transport**: `SshRemoteTransport`
+(`src/host/providers/remote-transport.ts`), built on the OpenSSH client. It is
+*opt-in*: the host constructs it only when `ACOS_REMOTE_TRANSPORT=ssh` is set.
+It validates the endpoint as a plain `user@host` (option-like, spaced, or
+metacharacter targets are refused *before* any process is spawned), passes
+`BatchMode=yes` with a bounded `ConnectTimeout`, never involves a shell,
+clamps output to 64 KiB, and kills the process on timeout or cancellation. A
+real connection to a live endpoint is **not** exercised in this repository's
+tests (no endpoint is available there); argument construction, output capping,
+timeouts, refusals and the honest presence probe are covered in
+`src/host/remote-transport.test.ts`, including a real probe of this host's
+OpenSSH client.
 
 ## Extension lifecycle — `src/host/extensions.ts`
 
@@ -107,6 +139,29 @@ use. Installing is inert:
 Enabling a requested capability remains a separate administrator action through
 the ordinary policy path, and still requires an attached provider.
 
+### Isolated execution — `runExtension` + `src/host/extension-sandbox.ts`
+
+Installing is inert, and *running* an extension grants nothing either. The
+`runExtension` command (administrator-only) executes the installed extension's
+WASM module under `wasi_snapshot_preview1` inside a dedicated worker thread:
+
+- no filesystem preopens, an empty environment, fixed arguments — the module
+  can only reach two capture file descriptors inside a private temp directory;
+- stdout/stderr are clamped *inside* the sandbox by a wrapping `fd_write`, so
+  output is bounded (default 64 KiB) before it reaches the disk;
+- a hard wall-clock timeout (default 5 s, max 30 s) terminates the worker from
+  outside — a module that never returns is stopped (`TIMED_OUT`);
+- a 128 MiB heap resource limit applies to the worker itself;
+- the module payload is bounded (8 MiB) and must belong to an already-installed
+  extension.
+
+The runtime compares capability facts before and after execution and treats any
+change as a fatal integrity error (the same `detectEscalation` proof used for
+installation), then audits the run with an explicit `Grants: none` statement.
+Covered by `src/host/extension-sandbox.test.ts` and
+`src/host/extension-execution.test.ts` (no-op run, stdout capture, output
+clamp, runaway termination, admin gate, install gate, non-escalation).
+
 ## Commands
 
 | Command | Authority | Effect |
@@ -116,6 +171,7 @@ the ordinary policy path, and still requires an attached provider.
 | `probeProviders` | admin session | Returns registry summaries; changes nothing |
 | `installExtension` | admin | Records a manifest; grants nothing; returns the report |
 | `removeExtension` | admin | Removes an installed extension |
+| `runExtension` | admin | Runs an installed extension in the WASI sandbox; grants nothing; audited |
 
 ## Verification scope
 
@@ -123,14 +179,24 @@ the ordinary policy path, and still requires an attached provider.
   detach revokes the dependent grant; the network allowlist, scheme, credential
   and private-address refusals enforced *during admission*; a successful
   provider-backed execution flowing `REQUESTED → … → COMPLETED` and returning the
-  provider result; device and remote execution through injected bridge/transport
-  doubles; extension install leaving every capability fact unchanged; unknown
-  capabilities and unknown providers failing closed. See
-  `src/host/providers.test.ts`, `src/host/extensions.test.ts` and
-  `src/host/governed-providers.test.ts`.
-- **Not verified here:** a live outbound fetch against a real allowlisted host
-  (the network provider's *transport* path is real but is exercised through
-  refusal and a deterministic double), a real microphone/camera bridge, a real
-  remote transport, and signed/isolated (WASI-or-equivalent) extension
-  execution. These remain future work and are listed in
-  [remaining work](REMAINING-WORK.md).
+  provider result; **a live outbound fetch through the real transport path**
+  against a local allowlisted HTTP server (size cap and redirect handling
+  included), with the same path failing closed without the `allowPrivate`
+  opt-in; device and remote execution through injected bridge/transport
+  doubles; the real ffmpeg bridge and OpenSSH transport components (argument
+  construction, bounds, timeouts, probes) through injected runners;
+  extension install leaving every capability fact unchanged; extension
+  execution in the WASI sandbox (completion, stdout clamp, timeout kill,
+  admin/install gates, non-escalation); unknown capabilities and unknown
+  providers failing closed. See `src/host/providers.test.ts`,
+  `src/host/network-provider.live.integration.test.ts`,
+  `src/host/extensions.test.ts`, `src/host/governed-providers.test.ts`,
+  `src/host/device-bridge.test.ts`, `src/host/remote-transport.test.ts`,
+  `src/host/extension-sandbox.test.ts` and
+  `src/host/extension-execution.test.ts`.
+- **Not verified here:** a live outbound fetch against a *public* allowlisted
+  host (only the local-server transport path runs live), a capture on real
+  microphone/camera hardware (no capture tool or device in this environment),
+  a real remote execution against a live SSH endpoint, and cross-platform
+  behaviour of the WASI sandbox beyond this host. These remain future work and
+  are listed in [remaining work](REMAINING-WORK.md).

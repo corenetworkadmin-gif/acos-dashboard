@@ -67,6 +67,11 @@ import {
   type ExtensionInstallReport,
   type InstalledExtension,
 } from "./extensions.ts";
+import {
+  MAX_EXTENSION_WASM_BYTES,
+  runExtensionWasm,
+  type ExtensionRunResult,
+} from "./extension-sandbox.ts";
 import type {
   EventRecord,
   IdempotencyRecord,
@@ -1167,6 +1172,53 @@ export class HostRuntime {
   }
   listExtensions(): InstalledExtension[] {
     return this.extensions.list();
+  }
+  // Execute an installed extension's WASM module inside the WASI sandbox.
+  // Administrator-only and audited like every other administrator act. The
+  // sandbox grants nothing: capability facts are compared before and after, so
+  // execution cannot attach a provider or enable a capability, and the module
+  // itself has no filesystem, environment, or network access inside WASI.
+  async runExtension(
+    id: string,
+    wasmBase64: string,
+    timeoutMs?: number,
+  ): Promise<ExtensionRunResult> {
+    this.requireAdmin();
+    const extension = this.extensions.get(id);
+    if (!extension)
+      throw new Error("Extension is not installed; nothing was executed.");
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(wasmBase64))
+      throw new Error("Extension module is not valid base64.");
+    const bytes = Buffer.from(wasmBase64, "base64");
+    if (bytes.byteLength === 0)
+      throw new Error("Extension module is empty.");
+    if (bytes.byteLength > MAX_EXTENSION_WASM_BYTES)
+      throw new Error(
+        `Extension module exceeds the ${MAX_EXTENSION_WASM_BYTES}-byte bound.`,
+      );
+    const before = this.state.capabilities.map((cap) => ({
+      id: cap.id,
+      enabled: cap.enabled,
+      attached: this.providers.isAttached(cap.id),
+    }));
+    const result = await runExtensionWasm(bytes, { timeoutMs });
+    const after = this.state.capabilities.map((cap) => ({
+      id: cap.id,
+      enabled: cap.enabled,
+      attached: this.providers.isAttached(cap.id),
+    }));
+    const escalations = detectEscalation(before, after);
+    if (escalations.length)
+      throw new Error(
+        `Extension execution attempted to escalate authority: ${escalations.join("; ")}`,
+      );
+    this.save(
+      `Extension "${id}" executed in the WASI sandbox: ${result.status}` +
+        `${result.exitCode !== null ? ` (exit ${result.exitCode})` : ""}, ` +
+        `${Buffer.byteLength(result.stdout)} output bytes${result.stdoutTruncated ? " (truncated)" : ""}. ` +
+        `Grants: none.${result.error ? ` Note: ${result.error.slice(0, 200)}` : ""}`,
+    );
+    return result;
   }
   rename(name: string) {
     this.requireAdmin();
