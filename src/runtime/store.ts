@@ -147,8 +147,18 @@ export async function command(
     void refresh();
   }
 }
-export async function login(key: string, otp = "") {
-  await request("login", { key, otp });
+export async function identityChallenge(key: string) {
+  return (await request("identity-challenge", { key })) as {
+    challenge: string;
+  };
+}
+export async function login(
+  key: string,
+  otp = "",
+  challenge = "",
+  signature = "",
+) {
+  await request("login", { key, otp, challenge, signature });
   await refresh();
 }
 // Streams a chat.send operation over Server-Sent Events. Tokens are delivered to

@@ -41,11 +41,11 @@ pnpm install:linux                # per-user launcher + desktop entry
 
 ## Priority 2 — local AI completeness (implemented paths; hardware validation remains)
 
-6. **Vulkan path implemented.** Explicit render-node isolation, isolated backend probe,
+6. **Backend registry and Linux Vulkan/CUDA/ROCm paths implemented.** Explicit render-node isolation, isolated backend probe,
    measured VRAM admission and CPU fallback are present. Verify on actual hardware before
-   claiming support; CUDA/NPU backends are not implemented.
-7. **Model registry implemented.** Qwen/ChatML and Llama 3 GGUF framing are registered.
-   Verify Llama models/tokenizers with real models; only reference Qwen CPU inference was exercised.
+   claiming support. Metal/native Windows GPU and NPU execution remain unavailable.
+7. **Model registry implemented.** Qwen/ChatML, Llama 3, Mistral v0.1/v0.2, Gemma 1/2 and Phi-3/3.5 GGUF framing are registered.
+   Verify non-reference models/tokenizers with real models; only reference Qwen CPU inference was exercised.
 8. **Cgroup containment implemented.** Delegated Linux memory/pids limits, cancellation and
    orphan reconciliation are present. Real 32-worker, memory-pressure, timeout and crash tests
    in a delegated subtree remain blocked in this sandbox. Existing rlimit tests still pass.
@@ -72,10 +72,12 @@ pnpm install:linux                # per-user launcher + desktop entry
     source retirement before ticket release, restart persistence and single-use offers. This trusts
     host administrators; hardware anti-cloning/anti-rollback protection is still outstanding.
 13. **Recovery UI and signed audit checkpoints implemented.** Companion backup/restore preserves
-    current policy and the journal. Checkpoints require independent external retention; a managed
+    current policy and the journal. Checkpoints support comparison with the current journal and require independent external retention; a managed
     anchoring service and full-installation disaster recovery are not supplied.
-14. **TOTP and Linux Secret Service integration implemented.** TPM/Secure Enclave identity and
-    hardware-protected storage remain open. Secret Service requires verification in a real session.
+14. **TOTP, optional TPM login proof and Linux Secret Service integration implemented.**
+    Linux TPM provisioning/execution and real Secret Service verification remain required.
+    Secure Enclave/native Windows TPM adapters, remote attestation and hardware anti-rollback
+    remain open; see `admin-identity.md`.
 
 See [implementation update](desktop-completion.md), [lifecycle trust](lifecycle-trust.md),
 [release procedures](desktop-releases.md) and [compute configuration](desktop-compute.md).
@@ -99,5 +101,5 @@ See [implementation update](desktop-completion.md), [lifecycle trust](lifecycle-
 
 ## Current green baseline (do not break)
 
-`pnpm typecheck` clean · `pnpm test` 136/136 · `pnpm test:launch` 2/2 · `pnpm lint` 0 errors ·
+`pnpm typecheck` clean · `pnpm test` 147/147 · `pnpm test:launch` 2/2 · `pnpm lint` 0 errors ·
 `pnpm build` succeeds.

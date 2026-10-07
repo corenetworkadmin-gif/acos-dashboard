@@ -11,7 +11,7 @@ follow-ups. The test results below are historical evidence, not a fresh validati
 ## Current desktop update — 2026-10-06
 
 See [desktop implementation update](desktop-completion.md) for the latest delivery and
-remaining blockers. Current checks: 136 tests passed, typecheck clean, lint 0 errors
+remaining blockers. Current checks: 147 tests passed, typecheck clean, lint 0 errors
 (six existing warnings), launch tests and packaged API/UI health verified. The live
 browser recovery flow and real Qwen CPU inference passed. Vulkan, delegated cgroups,
 Secret Service and hardware trust require target verification. The following Phase-1
@@ -60,8 +60,8 @@ scheduler (6), tools (5), adversarial (20), packaging (5), launch (2).
   are implemented (`docs/windows-native-isolation.md`); native compilation and enforcement
   remain unverified here. The shipped Windows path is a managed WSL2 guest runtime,
   which requires the owner's explicit agreement before it can be called the product runtime.
-- **No GPU/NPU execution.** Hardware discovery and compatibility logic exist and are tested with
-  synthetic inventories, but inference executes on CPU only. No CUDA/Metal/Vulkan/ROCm backend.
+- **GPU execution unverified.** Backend registry and Linux Vulkan/CUDA/ROCm paths are implemented;
+  only CPU inference was exercised here. Metal/native Windows GPU and NPU execution remain open.
 - **Providers governed, components not shipped.** Network, device and remote-execution capabilities
   now run through a governed provider registry (`src/host/providers.ts`): default-deny, attach
   separated from enable, and a provider-specific target constraint. The **network** provider is
@@ -69,13 +69,14 @@ scheduler (6), tools (5), adversarial (20), packaging (5), launch (2).
   The **device** (microphone/camera) and **remote** providers ship as bridge/transport *contracts*
   with no component, so they stay unavailable until one is supplied. That is deliberate
   (default-deny), and it means a live device capture and a live remote session are unfinished.
-- **No signed updates, no source retirement.** Recovery-journal rollback exists; a signed update
-  channel and authenticated migration-with-retirement do not.
+- **Hardware migration protection and production distribution remain open.** Signed update
+  channels, rollback and authenticated encrypted migration with software source retirement exist.
+  Hardware anti-cloning/anti-rollback and production signing/distribution are not verified.
 - **Extension lifecycle implemented but not isolated.** Manifests are validated, install is inert
   (`grants: []`) and non-escalation is proven structurally (`src/host/extensions.ts`). What remains
-  is manifest signing and WASI-or-equivalent isolated execution.
+  is WASI-or-equivalent isolated execution; optional pinned-key manifest signing exists.
 - **No independent security assessment.** The adversarial suite is self-authored.
-- **No signing certificates or release artifacts.** (Source *is* published and CI *is* green —
+- **No production signing certificates or authenticated release artifacts.** Unsigned local packages exist. (Source *is* published and CI *is* green —
   see §6.)
 - **Scope resolved (2026-10-06).** The owner explicitly selected a **desktop app**. Standalone-OS
   delivery is outside the agreed scope; desktop runtime isolation remains a requirement.
@@ -104,11 +105,9 @@ discovery. No developer-machine specifics are hard-coded into the runtime path.*
   machine (`hardware.test.ts`).
 - Developer-machine values appear only as **test fixtures**, never as requirements.
 
-**Caveats that must be stated honestly:** discovery is real, but *execution* is CPU-only, so a
-machine whose only viable path is a GPU backend will fall back to CPU or report the accelerator as
-unsupported. Windows/macOS discovery is unverified in this sandbox. The answer above concerns
-**discovery and configuration**, which are genuinely hardware-agnostic; **accelerator execution** is
-not yet.
+**Execution caveats:** CPU inference is verified. Linux accelerator paths need real hardware/driver
+validation. CPU fallback still requires enough host RAM and working isolation. Native Windows/macOS
+and non-reference models remain unverified in this sandbox. See [local AI](local-ai.md).
 
 ## 5. Publication (GitHub)
 
@@ -130,3 +129,20 @@ with a real Linux installer, a prepared Windows installer and a macOS installer.
 finished**: the native Windows runtime, GPU execution, shipped device/remote components, signed
 updates, isolated extension execution, and an independent audit remain. `REMAINING-WORK.md` is the
 ordered hand-off list for the next engineer.
+
+## P2 registry completion — 2026-10-06
+
+Backend descriptors, Linux accelerator admission, explicit CPU fallback reasons, five model-family
+framing adapters and containment plans are implemented. See [local AI](local-ai.md) for configuration and limits.
+No GPU execution, non-reference model inference or delegated-cgroup enforcement was verified here.
+Metal/native Windows GPU execution remains disabled; CPU isolation remains required.
+
+## P4 lifecycle completion update — 2026-10-06
+
+`updates.ts` now exposes the signed HTTPS channel alongside staged activation and rollback.
+Existing encrypted migration/source retirement and recovery UI remain in place.
+`anchor.ts` compares externally retained signed checkpoints against current journal history.
+`identity.ts` adds optional single-use administrator proofs and a Linux TPM signing helper,
+combinable with TOTP. See [identity setup](admin-identity.md).
+Real TPM/keyring verification, Secure Enclave/native Windows TPM, remote attestation,
+hardware anti-cloning/anti-rollback and production signing/distribution remain outstanding.

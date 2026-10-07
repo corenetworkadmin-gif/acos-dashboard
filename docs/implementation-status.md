@@ -10,7 +10,7 @@ It does not claim "complete", "production-ready" or "secure". See
 
 ## Baseline (this sandbox)
 
-- `pnpm typecheck` clean · `pnpm test` **136/136 pass** · `pnpm test:launch` **2/2 pass** ·
+- `pnpm typecheck` clean · `pnpm test` **147/147 pass** · `pnpm test:launch` **2/2 pass** ·
   `pnpm lint` 0 errors (6 pre-existing Fast Refresh warnings) · `pnpm build` succeeds.
 
 ## Desktop update — 2026-10-06
@@ -26,14 +26,14 @@ supersedes statements that these software paths do not exist.
 | Area | Working implementation | Limit |
 | --- | --- | --- |
 | Companion / engine separation | One identity, persistent personality/memories, conversation archive, replaceable engine | Single host daemon; no bootable OS image |
-| Operations | Explicit ID, identity, target, policy version, deterministic admission/execution/terminal states | CPU execution only; provider results bounded |
+| Operations | Explicit ID, identity, target, policy version, deterministic admission/execution/terminal states | CPU execution verified; accelerator execution unverified; provider results bounded |
 | Policy | Fail-closed allowlist, target/action matching, Safe/Intermediate/Advanced ceilings | — |
-| Resources | Dynamic host discovery, model admission, exclusive inference slot, process limits, cleanup, CPU-time accounting, address-space budget | CPU execution only; logical reservations, not guaranteed physical RAM on every platform |
+| Resources | Dynamic host discovery, model admission, exclusive inference slot, process limits, cleanup, CPU-time accounting, address-space budget | Linux accelerator paths unverified; physical RAM requires configured containment |
 | Administrator | Independent host key, expiring HttpOnly session, interlock drain/cancel, emergency termination | Trusted host admin; TOTP implemented; hardware identity and remote-deployment hardening remain open |
 | Persistence / audit | SQLite atomic state, hash-linked append journal, private permissions, startup corruption checks, interrupted-operation reconciliation | Signed checkpoint export and companion backup UI added; independent retention required |
 | **Encrypted storage** | AES-256-GCM at rest for Home/messages/audit with host key `storage.key` (0600), plaintext migration, integrity verification (`verifyStorage`) | File default; optional Linux Secret Service; not hardware-backed |
-| Local AI | Verified GGUF, llama.cpp CPU inference, real model/tokenizer health check, ChatML context, offline namespace, cancellation | Qwen/ChatML reference adapter; one concrete tokenizer |
-| **Streaming inference** | Token-by-token stdout iterator through the same admission/authorization/audit pipeline; SSE endpoint; UI token streaming; mid-stream cancellation | CPU path only |
+| Local AI | Verified GGUF, llama.cpp CPU inference, real model/tokenizer health check, ChatML context, offline namespace, cancellation | Five framing adapters; only reference Qwen model/tokenizer execution verified |
+| **Streaming inference** | Token-by-token stdout iterator through the same admission/authorization/audit pipeline; SSE endpoint; UI token streaming; mid-stream cancellation | CPU verified; accelerator path unverified |
 | **Tool-call mediation** | Declared tools, structured `<tool_call>` JSON parser, routed through the same operation pipeline; model text never executed; unknown/denied tools fail closed | Tool set is the declared reference set |
 | **Governed providers** | Default-deny provider registry; attach (host fact) separated from enable (policy grant); provider `authorizeTarget` is a second constraint, never a grant; network provider with exact-host allowlist, scheme/credential/private-address refusal and DNS-rebinding re-check; device + remote providers as bridge/transport contracts (unavailable without a component) | Network transport path real but exercised via refusal + a deterministic double; no shipped device bridge or remote transport |
 | **Extension lifecycle** | Strict manifest schema; install is inert (`grants: []`); `detectEscalation` structural non-escalation proof; unknown requests grant nothing | Pinned signed manifests supported; isolated execution remains open |
@@ -60,13 +60,13 @@ supersedes statements that these software paths do not exist.
    guest runtime.
 4. Signed provider/extension registry and WASI-or-equivalent extension isolation. The governed
    provider registry, network provider, device/remote contracts and inert extension lifecycle are
-   implemented (`docs/providers-and-authority.md`); what remains is manifest signing, isolated
+   implemented (`docs/providers-and-authority.md`); optional signed manifests exist; remaining work includes isolated
    extension execution, and shipped device/remote components.
 5. Hardware-backed anti-cloning and anti-rollback for migration; software retirement and
    destination-bound transfer are implemented under trusted-host assumptions.
 6. GPU/NPU accelerator backends (CUDA/Metal/Vulkan/ROCm) with per-backend isolation and CPU
-   fallback. Linux Vulkan path implemented; actual GPU execution remains unverified here.
-7. Real-model validation of the new Llama 3 registry entry; additional model families remain future work.
+   fallback. Linux Vulkan/CUDA/ROCm paths implemented; Metal/native Windows GPU/NPU execution and real-GPU validation remain open.
+7. Real-model validation of Llama 3, Mistral, Gemma and Phi registry entries; only reference Qwen CPU is verified.
 8. Signed release artifacts, checksums and update trust; published CI run and merged commit.
 
 Unavailable providers fail closed. The interface does not represent these remaining subsystems as
@@ -74,3 +74,20 @@ operational. Financial and propagation authority are not configurable capabiliti
 
 Hardware contract and platform limits: [hardware discovery](hardware.md).
 Open hand-off list: [remaining work](REMAINING-WORK.md).
+
+## P2 registry completion — 2026-10-06
+
+Backend descriptors, Linux accelerator admission, explicit CPU fallback reasons, five model-family
+framing adapters and containment plans are implemented. See [local AI](local-ai.md) for configuration and limits.
+No GPU execution, non-reference model inference or delegated-cgroup enforcement was verified here.
+Metal/native Windows GPU execution remains disabled; CPU isolation remains required.
+
+## P4 lifecycle completion update — 2026-10-06
+
+`updates.ts` now exposes the signed HTTPS channel alongside staged activation and rollback.
+Existing encrypted migration/source retirement and recovery UI remain in place.
+`anchor.ts` compares externally retained signed checkpoints against current journal history.
+`identity.ts` adds optional single-use administrator proofs and a Linux TPM signing helper,
+combinable with TOTP. See [identity setup](admin-identity.md).
+Real TPM/keyring verification, Secure Enclave/native Windows TPM, remote attestation,
+hardware anti-cloning/anti-rollback and production signing/distribution remain outstanding.

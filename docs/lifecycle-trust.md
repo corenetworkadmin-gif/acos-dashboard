@@ -43,8 +43,11 @@ node --experimental-strip-types src/host/release-cli.ts audit CHECKPOINT.json PI
 ```
 
 The signature binds companion ID, journal sequence, chain hash and timestamp. A signature
-proves who signed the checkpoint; it does not itself compare the checkpoint with a later
-database or provide a trusted timestamp. No external anchoring service is contacted.
+proves possession of the pinned signing key. Settings now accepts an independently retained checkpoint
+and pinned key, verifies the current chain and compares the signed sequence/hash with it.
+This detects truncation or divergence through that checkpoint; later entries are not covered.
+No trusted timestamp or managed external anchoring service is supplied. Retain the file
+and its pinned key outside the installation (for example, owner-managed immutable storage).
 The host's Ed25519 identity key is an owner-only file, not a TPM/Secure Enclave key.
 
 ## Optional authenticator factor
@@ -98,3 +101,9 @@ a successful store and matching lookup; failures preserve the file and refuse st
 Keep the same data-directory path because it identifies the keyring item. This is a
 desktop keyring integration, not a claim of TPM-backed storage. Real-session validation
 is outstanding in this sandbox. The default remains owner-only file storage.
+
+## Optional TPM administrator proof
+
+See [administrator identity](admin-identity.md) for the Linux TPM signing helper and single-use
+login challenges. This can be combined with the existing admin key and TOTP. Hardware
+provisioning and real TPM verification are outstanding; software test keys do not prove hardware trust.

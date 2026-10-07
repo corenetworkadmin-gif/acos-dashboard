@@ -1,3 +1,5 @@
+import { AdminIdentityGate, loadAdminIdentity } from "./identity.ts";
+import { publicKeyFingerprint } from "./trust.ts";
 import { TotpGate } from "./mfa.ts";
 import {
   createServer,
@@ -41,6 +43,13 @@ const commandSchema = z.discriminatedUnion("type", [
     .strict(),
   z.object({ type: z.literal("exportBackup") }).strict(),
   z.object({ type: z.literal("exportAuditAnchor") }).strict(),
+  z
+    .object({
+      type: z.literal("verifyAuditAnchor"),
+      checkpoint: z.unknown(),
+      pinnedKey: z.string().max(200),
+    })
+    .strict(),
   z
     .object({
       type: z.literal("restoreBackup"),
@@ -177,6 +186,7 @@ export function createHostServer(
   runtime: HostRuntime,
   key: string,
   mfa?: TotpGate,
+  identity?: AdminIdentityGate,
 ) {
   let session: { token: string; expires: number } | null = null;
   let attempts = 0,
@@ -212,7 +222,10 @@ export function createHostServer(
           return send(403, { error: "Origin is not allowed" });
         if (req.method === "GET" && req.url === "/api/health")
           return send(200, { status: "ok", service: "acos-host" });
-        if (req.method === "POST" && req.url === "/api/login") {
+        if (
+          req.method === "POST" &&
+          (req.url === "/api/login" || req.url === "/api/identity-challenge")
+        ) {
           if (Date.now() < retryAt)
             return send(429, {
               error: "Too many attempts. Try again in a minute.",
@@ -221,20 +234,39 @@ export function createHostServer(
             .object({
               key: z.string().max(128),
               otp: z.string().max(6).optional(),
+              challenge: z.string().max(2000).optional(),
+              signature: z.string().max(1402).optional(),
             })
             .strict()
             .parse(await body(req));
           if (
             !equal(credentials.key, key) ||
-            (mfa && !mfa.verify(credentials.otp ?? ""))
+            (req.url === "/api/login" &&
+              identity &&
+              !identity.verify(
+                credentials.challenge ?? "",
+                credentials.signature ?? "",
+                host,
+              )) ||
+            (req.url === "/api/login" &&
+              mfa &&
+              !mfa.verify(credentials.otp ?? ""))
           ) {
             if (++attempts >= 5) {
               retryAt = Date.now() + 60_000;
               attempts = 0;
             }
             return send(401, {
-              error: "Invalid administrator key or verification code",
+              error:
+                "Invalid administrator key, identity proof or verification code",
             });
+          }
+          if (req.url === "/api/identity-challenge") {
+            if (!identity)
+              return send(400, {
+                error: "Hardware identity is not configured.",
+              });
+            return send(200, { challenge: identity.issue(host) });
           }
           if (session) await runtime.sessionExpired();
           attempts = 0;
@@ -423,6 +455,12 @@ export function createHostServer(
           case "restoreBackup":
             result = runtime.restoreBackup(command.backup, command.confirm);
             break;
+          case "verifyAuditAnchor":
+            result = runtime.verifyAuditAnchor(
+              command.checkpoint,
+              command.pinnedKey,
+            );
+            break;
           case "exportAuditAnchor":
             result = runtime.exportAuditAnchor();
             break;
@@ -579,6 +617,12 @@ if (
     readFileSync(keyPath, "utf8").trim(),
     process.env.ACOS_MFA_FILE
       ? new TotpGate(process.env.ACOS_MFA_FILE)
+      : undefined,
+    process.env.ACOS_ADMIN_IDENTITY_PUBLIC_KEY_FILE
+      ? loadAdminIdentity(
+          process.env.ACOS_ADMIN_IDENTITY_PUBLIC_KEY_FILE,
+          publicKeyFingerprint(runtime.snapshot().migration.publicKey),
+        )
       : undefined,
   );
   server.requestTimeout = 150_000;

@@ -65,9 +65,7 @@ export function planCompute(
     .flatMap((p) =>
       p.devices.flatMap((id) => {
         if (id === "cpu")
-          return policy.allowCpu && workload.acceleratorMemoryBytes === 0
-            ? [{ backend: p.backend, id, free: 0 }]
-            : [];
+          return policy.allowCpu ? [{ backend: p.backend, id, free: 0 }] : [];
         const device = hardware.accelerators.find((d) => d.id === id);
         if (
           !device ||
@@ -80,17 +78,34 @@ export function planCompute(
     )
     .sort(
       (a, b) =>
+        Number(a.id === "cpu") - Number(b.id === "cpu") ||
         Number(b.id === policy.preferredDevice) -
           Number(a.id === policy.preferredDevice) ||
         b.free - a.free ||
         a.id.localeCompare(b.id),
     );
-  const selected = candidates[0];
+  let selected = candidates[0];
+  if (!selected && policy.allowCpu) {
+    const cpu = providers.find(
+      (provider) =>
+        provider.backend === "cpu" &&
+        provider.architectures.includes(hardware.architecture) &&
+        provider.devices.includes("cpu"),
+    );
+    if (cpu) selected = { backend: "cpu", id: "cpu", free: 0 };
+  }
+  const fallback =
+    !!selected && selected.backend === "cpu" && policy.backend !== "cpu";
+  const reason = fallback
+    ? `No admitted ${policy.backend === "auto" ? "accelerator" : policy.backend} provider; using CPU within the same host memory and isolation limits.`
+    : null;
   if (!selected)
     throw new Error(
       `No compatible ${policy.backend} compute provider is available for ${hardware.architecture} and this workload.`,
     );
   return {
+    fallback,
+    reason,
     backend: selected.backend,
     deviceId: selected.id,
     threads: Math.max(
@@ -98,6 +113,7 @@ export function planCompute(
       Math.min(hardware.cpu.usableThreads, workload.maxThreads),
     ),
     memoryBytes: workload.memoryBytes,
-    acceleratorMemoryBytes: workload.acceleratorMemoryBytes,
+    acceleratorMemoryBytes:
+      selected.id === "cpu" ? 0 : workload.acceleratorMemoryBytes,
   };
 }

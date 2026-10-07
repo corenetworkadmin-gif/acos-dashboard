@@ -25,22 +25,7 @@ export class JobContainment {
       tasks < 1
     )
       throw new Error("Invalid cgroup resource budget.");
-    const base = realpathSync(root);
-    if (
-      statfsSync(base).type !== 0x63677270 ||
-      statSync(base).uid !== process.getuid?.()
-    )
-      throw new Error(
-        "ACOS_CGROUP_ROOT must be an owned, delegated cgroup v2 directory.",
-      );
-    const controllers = readFileSync(
-      path.join(base, "cgroup.subtree_control"),
-      "utf8",
-    ).split(/\s+/);
-    if (!controllers.includes("memory") || !controllers.includes("pids"))
-      throw new Error(
-        "Delegate memory and pids controllers before starting ACOS.",
-      );
+    const base = delegatedRoot(root);
     // Reap only ACOS jobs whose owning host PID no longer exists. EPERM means
     // alive/unknown, never permission to kill. A reused PID delays cleanup safely.
     for (const entry of readdirSync(base)) {
@@ -105,4 +90,80 @@ export class JobContainment {
       "Kernel has not released the job cgroup; containment remains in place.",
     );
   }
+}
+
+function delegatedRoot(root: string): string {
+  const base = realpathSync(root);
+  if (
+    statfsSync(base).type !== 0x63677270 ||
+    statSync(base).uid !== process.getuid?.()
+  )
+    throw new Error(
+      "ACOS_CGROUP_ROOT must be an owned, delegated cgroup v2 directory.",
+    );
+  const controllers = readFileSync(
+    path.join(base, "cgroup.subtree_control"),
+    "utf8",
+  ).split(/\s+/);
+  if (!controllers.includes("memory") || !controllers.includes("pids"))
+    throw new Error(
+      "Delegate memory and pids controllers before starting ACOS.",
+    );
+  return base;
+}
+export interface ContainmentPlan {
+  mode: "cgroup-v2" | "windows-job" | "rlimits";
+  physicalMemory: boolean;
+  taskLimit: number | null;
+  reason: string;
+}
+// Capability detection does not claim a successful job. Membership/limit writes
+// are revalidated by JobContainment at each admission; failures never fall back.
+export function planContainment(input: {
+  platform: string;
+  threads: number;
+  cgroupRoot?: string;
+  requireCgroup?: boolean;
+  windowsHelperAvailable?: boolean;
+}): ContainmentPlan {
+  if (
+    !Number.isSafeInteger(input.threads) ||
+    input.threads < 1 ||
+    input.threads > 1024
+  )
+    throw new Error("Invalid containment thread budget.");
+  if (input.cgroupRoot) {
+    if (input.platform !== "linux" || process.platform !== "linux")
+      throw new Error("cgroup containment requires Linux.");
+    delegatedRoot(input.cgroupRoot);
+    return {
+      mode: "cgroup-v2",
+      physicalMemory: true,
+      taskLimit: input.threads + 16,
+      reason:
+        "Delegated memory/pids controllers; kernel admission required for every job.",
+    };
+  }
+  if (input.requireCgroup)
+    throw new Error(
+      "Strict physical memory containment requires ACOS_CGROUP_ROOT.",
+    );
+  if (input.platform === "win32") {
+    if (!input.windowsHelperAvailable)
+      throw new Error("Native Windows Job Object helper unavailable.");
+    return {
+      mode: "windows-job",
+      physicalMemory: true,
+      taskLimit: 1,
+      reason:
+        "Native helper must enforce committed-memory and active-process limits; thread count is an engine budget, not a kernel thread quota.",
+    };
+  }
+  return {
+    mode: "rlimits",
+    physicalMemory: false,
+    taskLimit: null,
+    reason:
+      "Address-space/CPU limits only; per-job physical RAM and task counts are not kernel-enforced without a delegated cgroup.",
+  };
 }

@@ -27,6 +27,8 @@ export interface HardwareReport {
   limitations: string[];
 }
 export interface ComputePlan {
+  fallback: boolean;
+  reason: string | null;
   backend: string;
   deviceId: string;
   threads: number;

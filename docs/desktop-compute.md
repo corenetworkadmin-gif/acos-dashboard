@@ -2,7 +2,8 @@
 
 ## Models
 
-Set `ACOS_MODEL_ADAPTER=qwen-chatml` or `llama3` for the registered GGUF families.
+See [local AI](local-ai.md) for the backend registry, all five model families and containment reporting.
+Set `ACOS_MODEL_FAMILY` for the registered GGUF family.
 The pinned reference digest defaults to Qwen/ChatML. Unknown adapters and unconfigured
 non-reference models fail closed. Set the measured `ACOS_MODEL_RAM_MB` for each model.
 The GGUF model still supplies its tokenizer to llama.cpp; the registry selects framing,
@@ -23,7 +24,8 @@ The VRAM number is an example, not a universal recommendation: measure the selec
 model's requirement. Only the configured render character device is exposed; network
 isolation and read-only model/engine mounts remain. The host requires PCI telemetry,
 known available VRAM and exactly one Vulkan engine device in an isolated probe.
-Unknown/insufficient resources fall back to CPU under `auto`; explicit `vulkan` refuses.
+Unknown/insufficient accelerator resources fall back to CPU, including an explicit `vulkan` request.
+Host RAM and isolation admission must still succeed.
 The mapping is checked again before launch. GPU-driver access expands the kernel attack
 surface and does not impose a kernel VRAM quota; resource admission is not hard GPU
 memory containment. Real driver/model execution must be verified before claiming support.

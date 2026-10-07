@@ -15,6 +15,9 @@ function download(name: string, value: unknown) {
 }
 export function RecoveryPanel() {
   const [file, setFile] = useState<File | null>(null);
+  const [checkpoint, setCheckpoint] = useState<File | null>(null);
+  const [pinnedKey, setPinnedKey] = useState("");
+  const [anchorResult, setAnchorResult] = useState("");
   const [confirmed, setConfirmed] = useState(false);
   return (
     <Widget
@@ -52,6 +55,56 @@ export function RecoveryPanel() {
           Download signed audit checkpoint
         </ActionButton>
       </div>
+      <details className="mt-5 rounded border p-3">
+        <summary className="cursor-pointer text-sm">
+          Compare an externally retained checkpoint
+        </summary>
+        <label htmlFor="anchor-file" className="mt-3 block text-xs">
+          Retained checkpoint
+        </label>
+        <input
+          id="anchor-file"
+          type="file"
+          accept="application/json,.json"
+          onChange={(e) => {
+            setCheckpoint(e.target.files?.[0] ?? null);
+            setAnchorResult("");
+          }}
+        />
+        <label htmlFor="anchor-key" className="mt-3 block text-xs">
+          Independently pinned signing public key (PEM)
+        </label>
+        <textarea
+          id="anchor-key"
+          value={pinnedKey}
+          onChange={(e) => {
+            setPinnedKey(e.target.value);
+            setAnchorResult("");
+          }}
+          className="my-2 w-full rounded border p-2 font-mono text-xs"
+        />
+        <ActionButton
+          variant="outline"
+          disabled={!checkpoint || !pinnedKey}
+          action={async () => {
+            setAnchorResult("");
+            if (!checkpoint || checkpoint.size > 32000)
+              throw new Error("Select a checkpoint smaller than 32 KB.");
+            const result = (await command("verifyAuditAnchor", {
+              checkpoint: JSON.parse(await checkpoint.text()),
+              pinnedKey,
+            })) as { sequence: number; laterEntries: number };
+            setAnchorResult(
+              `Checkpoint matches through entry ${result.sequence}. ${result.laterEntries} later entries are not covered by this checkpoint.`,
+            );
+          }}
+        >
+          Compare with current journal
+        </ActionButton>
+        <p role="status" className="mt-2 text-xs">
+          {anchorResult}
+        </p>
+      </details>
       <label className="mt-5 block text-sm" htmlFor="recovery-file">
         Companion backup file
       </label>

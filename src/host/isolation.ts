@@ -1,3 +1,4 @@
+import { validateDevicePath } from "./backends.ts";
 import { renderDevice } from "./accelerator.ts";
 // Platform isolation adapters (architecture: isolation is a separate layer from
 // hardware discovery and from AI-engine support).
@@ -50,6 +51,7 @@ export interface WrapInput {
   // Host paths exposed writable inside the sandbox (scratch only).
   writablePaths: string[];
   renderNode?: string;
+  devicePaths?: string[];
   // Extra environment variables the confined program needs (e.g. LD_LIBRARY_PATH).
   env: Record<string, string>;
   // Working directory inside the sandbox.
@@ -124,6 +126,10 @@ export class LinuxIsolationAdapter implements IsolationAdapter {
   wrap(input: WrapInput): WrappedCommand {
     const limits = executionLimits(input.limits, input.limits.threads);
     const mounts: string[] = [];
+    for (const device of new Set(input.devicePaths ?? [])) {
+      validateDevicePath(device);
+      mounts.push("--dev-bind", device, device);
+    }
     if (input.renderNode) {
       renderDevice(input.renderNode);
       mounts.push("--dev-bind", input.renderNode, input.renderNode);
@@ -230,6 +236,7 @@ export interface WindowsJobSpec {
   readOnlyPaths: ReadOnlyMount[];
   writablePaths: string[];
   renderNode?: string;
+  devicePaths?: string[];
   workdir: string | null;
   env: Record<string, string>;
   limits: WindowsJobLimits;
@@ -280,6 +287,10 @@ export class WindowsIsolationAdapter implements IsolationAdapter {
   }
 
   wrap(input: WrapInput): WrappedCommand {
+    if (input.devicePaths?.length || input.renderNode)
+      throw new Error(
+        "Native Windows accelerator passthrough is not implemented.",
+      );
     const jobName = "ACOS-Engine-" + randomUUID();
     const spec: WindowsJobSpec = {
       version: 1,
@@ -287,6 +298,7 @@ export class WindowsIsolationAdapter implements IsolationAdapter {
       command: input.command,
       readOnlyPaths: input.readOnlyPaths,
       writablePaths: input.writablePaths,
+      devicePaths: input.devicePaths ?? [],
       workdir: input.workdir ?? null,
       env: input.env,
       limits: windowsJobLimits(input.limits),
@@ -351,6 +363,10 @@ export class DarwinIsolationAdapter implements IsolationAdapter {
   // the Linux (no network, read-only engine/model) and Windows (capability-free
   // AppContainer, WFP deny) adapters.
   profile(input: WrapInput): string {
+    if (input.devicePaths?.length)
+      throw new Error(
+        "Device passthrough is not supported by the Darwin isolation boundary.",
+      );
     const reads = [
       '(subpath "/usr/lib")',
       '(subpath "/System")',
