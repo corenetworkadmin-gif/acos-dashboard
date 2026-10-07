@@ -261,7 +261,11 @@ async function readCapped(
 
 // The host never captures audio or video itself. A device bridge is an explicit,
 // separately-installed component; without one the capability stays unavailable.
+// A bridge may expose probe() so availability reflects the real component
+// (capture tool present, device configured); bridges without it are treated as
+// available whenever they exist.
 export interface DeviceBridge {
+  probe?(device: "microphone" | "camera"): ProviderProbe;
   capture(context: {
     device: "microphone" | "camera";
     timeoutMs: number;
@@ -294,6 +298,7 @@ export class DeviceProvider implements Provider {
         available: false,
         reason: `No ${this.device} bridge is configured on this host.`,
       };
+    if (this.bridge.probe) return this.bridge.probe(this.device);
     return { available: true, reason: null };
   }
 
@@ -338,7 +343,11 @@ export class DeviceProvider implements Provider {
 
 // Remote execution is a separate, independently-authorized capability. The host
 // never opens a remote session itself; a transport is an explicit component.
+// A transport may expose probe() so availability reflects the real component
+// (e.g. an installed OpenSSH client); transports without it are treated as
+// available whenever they exist.
 export interface RemoteTransport {
+  probe?(): ProviderProbe;
   execute(context: {
     target: string;
     command: string;
@@ -366,6 +375,7 @@ export class RemoteProvider implements Provider {
   probe(): ProviderProbe {
     if (!this.transport)
       return { available: false, reason: "No remote transport is configured on this host." };
+    if (this.transport.probe) return this.transport.probe();
     return { available: true, reason: null };
   }
 
@@ -493,14 +503,23 @@ export class ProviderRegistry {
   }
 }
 
-// The providers this build ships. Network uses the runtime's fetch; device and
-// remote providers have no bridge/transport by default, so they stay unavailable
-// until a component is explicitly supplied.
-export function defaultProviders(): Provider[] {
+// The providers this build ships. Network uses the runtime's fetch. Device and
+// remote providers start with no bridge/transport — default-deny — unless the
+// administrator has explicitly configured the corresponding components on this
+// host (ACOS_DEVICE_BRIDGE / ACOS_REMOTE_TRANSPORT); a configured component
+// still only makes the provider *attachable*, never attached or enabled.
+export interface ProviderComponents {
+  deviceBridge?: DeviceBridge | null;
+  remoteTransport?: RemoteTransport | null;
+}
+
+export function defaultProviders(components: ProviderComponents = {}): Provider[] {
+  const deviceBridge = components.deviceBridge ?? null;
+  const remoteTransport = components.remoteTransport ?? null;
   return [
     new NetworkProvider(),
-    new DeviceProvider("microphone", null),
-    new DeviceProvider("camera", null),
-    new RemoteProvider(null),
+    new DeviceProvider("microphone", deviceBridge),
+    new DeviceProvider("camera", deviceBridge),
+    new RemoteProvider(remoteTransport),
   ];
 }
